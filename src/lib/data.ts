@@ -1,8 +1,8 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { Ledger } from "./commission";
+import { Ledger } from "./ledger";
 import { createClient } from "./supabase/server";
-import type { Client, Deal, Expedition, Partner, Profile } from "./types";
+import type { Client, Deal, Expedition, Partner, Passenger, Profile } from "./types";
 
 export type Session = {
   profile: Profile;
@@ -59,14 +59,20 @@ export type World = {
 // Carrega tudo o que o usuário pode ver (as regras de acesso do banco já filtram por parceiro).
 export const loadWorld = cache(async (): Promise<World> => {
   const supabase = await createClient();
-  const [partners, exps, clients, deals] = await Promise.all([
+  // deal_passengers: o parceiro só recebe os passageiros que ele cadastrou (RLS).
+  const [partners, exps, clients, deals, passengers] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("clients").select("*").order("created_at"),
     supabase.from("deals").select("*").order("closed_on", { ascending: false }),
+    supabase.from("deal_passengers").select("*").order("position"),
   ]);
-  for (const r of [partners, exps, clients, deals]) {
+  for (const r of [partners, exps, clients, deals, passengers]) {
     if (r.error) throw new Error(r.error.message);
+  }
+  const byDeal = new Map<string, Passenger[]>();
+  for (const p of (passengers.data ?? []) as Passenger[]) {
+    byDeal.set(p.deal_id, [...(byDeal.get(p.deal_id) ?? []), p]);
   }
   const w = {
     partners: (partners.data ?? []) as Partner[],
@@ -77,6 +83,7 @@ export const loadWorld = cache(async (): Promise<World> => {
       voo: Number(d.voo),
       hotel: Number(d.hotel),
       seguro: Number(d.seguro),
+      passengers: byDeal.get(d.id) ?? [],
     })),
   };
   return { ...w, ledger: new Ledger(w.deals, w.partners, w.exps, w.clients) };

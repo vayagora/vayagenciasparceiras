@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { expEnd, expStatus, PRODUCTS, RULE_TIP, stageOf, type Resolved, type Tone } from "@/lib/commission";
+import { expEnd, expStatus, PRODUCTS, stageOf, type Tone } from "@/lib/commission";
+import type { ClientLine } from "@/lib/ledger";
+import { dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
@@ -9,13 +11,37 @@ import { ClientTools, DealActions, FollowUpForm, NewDealForm } from "./forms";
 
 export const metadata = { title: "Expedição" };
 
-function prodCells(dl: Resolved[]) {
-  return PRODUCTS.map((k) => {
-    const v = dl.reduce((a, r) => a + (Number(r.deal[k]) || 0), 0);
-    return v > 0
-      ? { k, label: "Comprado", tone: "success" as Tone, value: brl(v) }
-      : { k, label: dl.length ? "Não comprou" : "Sem compra", tone: "neutral" as Tone, value: "—" };
-  });
+// Células Voo / Hospedagem / Seguro de uma linha principal (valores somados por negócio)
+function ValueCells({ values, hasDeal }: { values: Record<string, number>; hasDeal: boolean }) {
+  return (
+    <>
+      {PRODUCTS.map((k) => {
+        const v = values[k] ?? 0;
+        return v > 0 ? (
+          <td key={k}><Badge tone="success">Comprado</Badge><div className="sub">{brl(v)}</div></td>
+        ) : (
+          <td key={k}><Badge tone="neutral">{hasDeal ? "Não comprou" : "Sem compra"}</Badge><div className="sub">—</div></td>
+        );
+      })}
+    </>
+  );
+}
+
+// Linha de quem está incluído no negócio de outro passageiro: sem valores, ganho "—".
+function IncludedCells({ deals }: { deals: Resolved[] }) {
+  return (
+    <td colSpan={3} className="muted">
+      Compra concluída · incluída no negócio {deals.map((r) => dealNo(r.deal)).join(", ")}
+    </td>
+  );
+}
+
+function DealNos({ deals }: { deals: Resolved[] }) {
+  return <td>{deals.length ? deals.map((r) => dealNo(r.deal)).join(", ") : "—"}</td>;
+}
+
+function moneyOf(r: Resolved) {
+  return { voo: Number(r.deal.voo) || 0, hotel: Number(r.deal.hotel) || 0, seguro: Number(r.deal.seguro) || 0 };
 }
 
 export default async function ExpeditionPage({
@@ -38,6 +64,7 @@ export default async function ExpeditionPage({
   const outside = ledger.dealsForExp(exp.id).filter((r) => r.flags.some((f) => f.key === "fora"));
   const outsideCom = outside.reduce((a, r) => a + r.com.total, 0);
   const editing = isVay && sp.cliente ? t.clients.find((c) => c.id === sp.cliente) : undefined;
+  const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
 
   const expDeals = ledger.resolved
     .filter((r) => (r.exp && r.exp.id === exp.id) || (!r.exp && r.partner?.id === exp.partner_id))
@@ -107,11 +134,12 @@ export default async function ExpeditionPage({
           </div>
         </div>
         <div className="table-wrap">
-          <table className="tbl" style={{ minWidth: isVay ? 1180 : 1040 }}>
+          <table className="tbl" style={{ minWidth: isVay ? 1260 : 1120 }}>
             <thead>
               <tr>
                 <th>Cliente</th>
                 <th>Etapa</th>
+                <th>Negócio</th>
                 <th>Voo</th>
                 <th>Hospedagem</th>
                 <th>Seguro</th>
@@ -121,16 +149,20 @@ export default async function ExpeditionPage({
               </tr>
             </thead>
             <tbody>
-              {t.clients.map((c) => {
-                const sg = stageOf(ledger.shownStage(c));
-                const cd = ledger.clientDeals(c);
-                const com = cd.reduce((a, r) => a + r.com.total, 0);
-                return (
+              {lines.map((l) => {
+                const c = l.client;
+                const sg = stageOf(l.stage);
+                return [
                   <tr key={c.id} className={editing?.id === c.id ? "hl" : undefined}>
                     <td>
                       <span className="strong">{c.name}</span>
                       <div className="sub">{c.email || "—"}</div>
                       {c.phone ? <div className="sub">{c.phone}</div> : null}
+                      {!isVay && l.hiddenPassengers ? (
+                        <div className="sub">
+                          +{l.hiddenPassengers} {l.hiddenPassengers === 1 ? "passageiro não cadastrado" : "passageiros não cadastrados"}
+                        </div>
+                      ) : null}
                       {isVay && c.hubspot_status ? (
                         <div style={{ marginTop: 6 }}>
                           <Badge tone={c.hubspot_status === "existente" ? "bluebell" : "neutral"}>
@@ -140,41 +172,71 @@ export default async function ExpeditionPage({
                       ) : null}
                     </td>
                     <td><Badge tone={sg.tone} dot>{sg.label}</Badge></td>
-                    {prodCells(cd).map((p) => (
-                      <td key={p.k}><Badge tone={p.tone}>{p.label}</Badge><div className="sub">{p.value}</div></td>
-                    ))}
-                    <td className="num strong">{brl(com)}</td>
+                    <DealNos deals={l.deals} />
+                    {l.primary.length || !l.included.length ? (
+                      <ValueCells values={l.values} hasDeal={l.deals.length > 0} />
+                    ) : (
+                      <IncludedCells deals={l.included} />
+                    )}
+                    <td className="num strong">{l.primary.length ? brl(l.com.total) : l.included.length ? "—" : brl(0)}</td>
                     <td>
                       {c.last_follow_up ? fmtDate(c.last_follow_up) : "Sem contato"}
                       {c.note ? <div className="sub" style={{ maxWidth: 260 }}>{c.note}</div> : null}
+                      {l.primary.length && l.included.length ? (
+                        <div className="sub">Também incluído no negócio {l.included.map((r) => dealNo(r.deal)).join(", ")}</div>
+                      ) : null}
                     </td>
                     {isVay ? (
                       <td><Link href={`/expedicoes/${exp.id}?cliente=${c.id}#follow-up`} className="btn secondary sm">Atualizar</Link></td>
                     ) : null}
-                  </tr>
-                );
+                  </tr>,
+                  ...(isVay
+                    ? l.unregistered.map(({ passenger: p, deal: r }) => (
+                        <tr key={`${c.id}-${p.id}`}>
+                          <td>
+                            <span className="strong">{p.name}</span>
+                            <div className="sub">{p.email || p.phone || "—"}</div>
+                            <div style={{ marginTop: 6 }}><Badge tone="neutral">Não cadastrado pelo parceiro</Badge></div>
+                          </td>
+                          <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
+                          <DealNos deals={[r]} />
+                          <IncludedCells deals={[r]} />
+                          <td className="num">—</td>
+                          <td>—</td>
+                          <td />
+                        </tr>
+                      ))
+                    : []),
+                ];
               })}
               {isVay
-                ? outside.map((r) => (
-                    <tr key={r.deal.id} className="warn">
-                      <td>
-                        <span className="strong">{r.deal.contact_name}</span>
-                        <div className="sub">{r.deal.email}</div>
-                        <div style={{ marginTop: 6 }}><Badge tone="yellow">Fora da lista do parceiro</Badge></div>
-                      </td>
-                      <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
-                      {prodCells([r]).map((p) => (
-                        <td key={p.k}><Badge tone={p.tone}>{p.label}</Badge><div className="sub">{p.value}</div></td>
-                      ))}
-                      <td className="num strong">{brl(r.com.total)}</td>
-                      <td>Fechado em {fmtDate(r.deal.closed_on)}<div className="sub">Negócio marcado com o afiliado no HubSpot.</div></td>
-                      <td />
-                    </tr>
-                  ))
+                ? outside.map((r) => {
+                    const ps = sortPassengers(r.deal.passengers);
+                    return (
+                      <tr key={r.deal.id} className="warn">
+                        <td>
+                          {ps.map((p) => (
+                            <div key={p.id}>
+                              <span className={p.is_titular ? "strong" : undefined}>{p.name}</span>
+                              {p.is_titular && ps.length > 1 ? <span className="sub"> · titular</span> : null}
+                              <div className="sub">{p.email || p.phone}</div>
+                            </div>
+                          ))}
+                          <div style={{ marginTop: 6 }}><Badge tone="yellow">Fora da lista do parceiro</Badge></div>
+                        </td>
+                        <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
+                        <DealNos deals={[r]} />
+                        <ValueCells values={moneyOf(r)} hasDeal />
+                        <td className="num strong">{brl(r.com.total)}</td>
+                        <td>Fechado em {fmtDate(r.deal.closed_on)}<div className="sub">Negócio marcado com o afiliado no HubSpot.</div></td>
+                        <td />
+                      </tr>
+                    );
+                  })
                 : null}
               {t.clients.length === 0 && (!isVay || outside.length === 0) ? (
                 <tr>
-                  <td colSpan={isVay ? 8 : 7} className="empty">
+                  <td colSpan={isVay ? 9 : 8} className="empty">
                     {isVay
                       ? "O parceiro ainda não cadastrou clientes nesta expedição."
                       : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}
@@ -215,9 +277,22 @@ export default async function ExpeditionPage({
                 <div className="top">
                   <div className="stack" style={{ gap: 6 }}>
                     <div className="row" style={{ gap: 8 }}>
-                      <span className="strong">{d.contact_name}</span>
+                      <span className="strong">Negócio {dealNo(d)}</span>
                       {flags.map((f, i) => <Badge key={i} tone={f.tone}>{f.label}</Badge>)}
                     </div>
+                    <span className="small">
+                      {sortPassengers(d.passengers).map((p, i) => {
+                        const notListed = r.exp && r.unregistered.some((u) => u.id === p.id);
+                        return (
+                          <span key={p.id}>
+                            {i ? " · " : ""}
+                            <span className={p.is_titular ? "strong" : undefined}>{p.name}</span>
+                            {p.is_titular ? " (titular)" : ""}
+                            {notListed ? <span className="muted"> · não cadastrado</span> : null}
+                          </span>
+                        );
+                      })}
+                    </span>
                     <span className="small">
                       {d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta {fmtDate(d.end_date)}
                     </span>

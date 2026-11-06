@@ -26,7 +26,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 ### 1. Supabase (banco e login)
 
 1. Crie uma conta em <https://supabase.com> e um projeto novo (região *South America (São Paulo)*).
-2. Em **SQL Editor › New query**, cole o conteúdo de `supabase/migrations/0001_init.sql` e clique em **Run**.
+2. Em **SQL Editor › New query**, cole o conteúdo de `supabase/migrations/0001_init.sql` e clique em **Run**. Depois, numa nova query, faça o mesmo com `supabase/migrations/0002_passageiros.sql`.
 3. *(Opcional, para testar)* Rode também `supabase/seed_demo.sql`. Ele cria os 3 parceiros, as 6 expedições e os clientes do protótipo.
 4. Em **Authentication › Sign In / Providers**, desligue **Allow new users to sign up**. O acesso é só por convite.
 5. Em **Authentication › Emails**, troque o link dos modelos:
@@ -40,6 +40,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 2. Em **Environment Variables**, preencha as variáveis de `.env.example`:
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
    - `NEXT_PUBLIC_SITE_URL`: o endereço final (ex.: `https://vayagenciasparceiras.vercel.app`)
+   - HubSpot (quando for ligar a sincronização): `HUBSPOT_TOKEN` e, se os nomes internos forem diferentes, as variáveis `HUBSPOT_PROP_*`. `CRON_SECRET` para a sincronização agendada.
 3. Clique em **Deploy**.
 4. De volta ao Supabase, em **Authentication › URL Configuration**, coloque esse mesmo endereço em **Site URL**.
 
@@ -61,6 +62,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 npm install
 cp .env.example .env.local   # preencha com as chaves do Supabase
 npm run dev                  # http://localhost:3000
+npm test                     # testes (os de acesso ao banco sobem um Postgres local, se houver)
 ```
 
 ## Estrutura
@@ -68,7 +70,11 @@ npm run dev                  # http://localhost:3000
 ```
 supabase/migrations/   esquema do banco + regras de acesso
 supabase/seed_demo.sql dados de demonstração
-src/lib/commission.ts  taxas, etapas e regra de vínculo negócio → expedição
+docs/SPEC.md           especificação (fonte da verdade das regras)
+src/lib/commission.ts  taxas e etapas
+src/lib/matching.ts    vínculo negócio → expedição e cliente ↔ passageiro
+src/lib/ledger.ts      totais por expedição e linhas da tabela de clientes (soma por negócio)
+src/lib/hubspot.ts     cliente da API do HubSpot · src/lib/sync.ts sincronização
 src/lib/cities.ts      destinos disponíveis (com coordenadas para a regra de raio)
 src/app/(app)/         telas após o login (painel, expedições, parceiros, visão geral)
 src/app/(app)/actions.ts  todas as gravações (criar expedição, clientes, follow-up, convites…)

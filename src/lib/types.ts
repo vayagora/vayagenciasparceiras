@@ -36,6 +36,7 @@ export type Client = {
   phone: string;
   stage: StageId;
   hubspot_status: "novo" | "existente" | null;
+  hubspot_contact_id: string | null;
   last_follow_up: string | null;
   note: string;
   created_at: string;
@@ -43,11 +44,24 @@ export type Client = {
 
 export type Leg = { city: string; date: string };
 
+// Passageiro do negócio (espelho das associações negócio → contato no HubSpot).
+// O parceiro só recebe do banco os passageiros que ele cadastrou (RLS).
+export type Passenger = {
+  id: string;
+  deal_id: string;
+  hubspot_contact_id: string | null;
+  name: string;
+  email: string;
+  phone: string;
+  is_titular: boolean;
+  first_seen_at: string;
+  position: number;
+};
+
 export type Deal = {
   id: string;
   hubspot_id: string | null;
-  contact_name: string;
-  email: string;
+  seq: number;
   afiliado: string;
   closed_on: string;
   legs: Leg[];
@@ -58,4 +72,9 @@ export type Deal = {
   override_expedition_id: string | null;
   override_none: boolean;
   reviewed: boolean;
+  // Total de passageiros (o parceiro vê a contagem, não a identidade dos que não cadastrou)
+  passenger_count: number;
+  titular_labeled: boolean;
+  // Passageiros visíveis para o usuário (carregados à parte)
+  passengers: Passenger[];
 };

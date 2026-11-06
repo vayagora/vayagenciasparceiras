@@ -45,7 +45,7 @@ function AddClientForm({ expId, onClose }: { expId: string; onClose: () => void 
     <section className="panel stack">
       <div className="ttl">
         <h2 className="section-title">Cadastrar cliente</h2>
-        <Tip>O e-mail é usado para encontrar o cliente na base da Vay Agora.</Tip>
+        <Tip>Cadastre cada viajante separadamente, mesmo quando viajam juntos.</Tip>
       </div>
       <form ref={ref} action={action} className="form">
         <div className="form-grid">
@@ -55,6 +55,7 @@ function AddClientForm({ expId, onClose }: { expId: string; onClose: () => void 
           </div>
           <div className="field">
             <label htmlFor="nc-email">E-mail</label>
+            <span className="small muted">Usado para encontrar o cliente na base da Vay Agora.</span>
             <input id="nc-email" name="email" type="email" className="input" required />
           </div>
           <div className="field">
@@ -103,7 +104,7 @@ function ImportForm({ expId, onClose }: { expId: string; onClose: () => void }) 
     <section className="panel stack">
       <div className="ttl">
         <h2 className="section-title">Importar clientes por planilha</h2>
-        <Tip>Envie um arquivo CSV ou cole as linhas copiadas do Excel ou Google Planilhas. Colunas: nome, e-mail, telefone.</Tip>
+        <Tip>Envie um arquivo CSV ou cole as linhas copiadas do Excel ou Google Planilhas. Colunas: nome, e-mail, telefone. Cadastre cada viajante separadamente, mesmo quando viajam juntos: uma linha por pessoa.</Tip>
       </div>
       <form action={action} className="form">
         <div className="row">
@@ -254,9 +255,17 @@ export function NewDealForm({ afiliado, defaultCity, defaultDate }: { afiliado: 
         <Tip>Use enquanto a sincronização com o HubSpot não estiver ativa. O negócio é vinculado pelas mesmas regras de afiliado, data e destino.</Tip>
       </div>
       <div className="form-grid">
-        <div className="field"><label htmlFor="nd-name">Cliente</label><input id="nd-name" name="contact_name" className="input" required /></div>
-        <div className="field"><label htmlFor="nd-email">E-mail do cliente</label><input id="nd-email" name="email" type="email" className="input" /></div>
+        <div className="field"><label htmlFor="nd-name">Titular</label><input id="nd-name" name="contact_name" className="input" required /></div>
+        <div className="field"><label htmlFor="nd-email">E-mail do titular</label><input id="nd-email" name="email" type="email" className="input" /></div>
+        <div className="field"><label htmlFor="nd-phone">Telefone do titular</label><input id="nd-phone" name="phone" type="tel" className="input" /></div>
         <div className="field"><label htmlFor="nd-closed">Fechado em</label><input id="nd-closed" name="closed_on" type="date" className="input" required /></div>
+      </div>
+      <div className="field">
+        <div className="ttl">
+          <label htmlFor="nd-others">Outros passageiros (opcional)</label>
+          <Tip>Um por linha: nome; e-mail; telefone. Valores e comissão são do negócio e contam uma vez só.</Tip>
+        </div>
+        <textarea id="nd-others" name="others" className="textarea mono" placeholder={"Gislaine Souza;gislaine@email.com;(11) 98888-7777"} />
       </div>
       <div className="form-grid">
         {[0, 1, 2].map((i) => (

@@ -2,13 +2,27 @@ import Link from "next/link";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { addMoney, stageOf, ZERO } from "@/lib/commission";
 import { loadWorld, requireVay } from "@/lib/data";
-import { brl, fmtDate, plural } from "@/lib/format";
+import { brl, fmtDate, fmtDateTime, plural } from "@/lib/format";
+import { createClient } from "@/lib/supabase/server";
+import { SyncButton } from "./SyncButton";
 
 export const metadata = { title: "Visão geral" };
 
 export default async function OverviewPage() {
   await requireVay();
   const { partners, exps, clients, ledger } = await loadWorld();
+  const supabase = await createClient();
+  const { data: lastRun } = await supabase
+    .from("sync_runs")
+    .select("started_at, ok, error")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastTxt = !lastRun
+    ? "Ainda não sincronizado"
+    : lastRun.ok === false
+      ? `Última tentativa ${fmtDateTime(lastRun.started_at)} falhou: ${lastRun.error ?? "erro"}`
+      : `Última sincronização: ${fmtDateTime(lastRun.started_at)}`;
   const partnerById = new Map(partners.map((p) => [p.id, p]));
   const expById = new Map(exps.map((e) => [e.id, e]));
 
@@ -36,6 +50,7 @@ export default async function OverviewPage() {
             <Tip>Resultados de todos os parceiros, com base nos negócios do HubSpot marcados com o campo afiliado.</Tip>
           </div>
         </div>
+        <SyncButton last={lastTxt} />
       </div>
 
       <div className="grid-kpi">

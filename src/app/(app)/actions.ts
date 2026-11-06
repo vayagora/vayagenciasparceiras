@@ -9,6 +9,7 @@ import { parseRows, type ClientRow } from "@/lib/csv";
 import { requireSession, requireVay } from "@/lib/data";
 import { digits, lower, plural, todayIso } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { syncHubspot } from "@/lib/sync";
 import type { Leg } from "@/lib/types";
 
 export type FormState = { error?: string; ok?: string } | undefined;
@@ -151,6 +152,8 @@ export async function createDeal(afiliado: string, _: FormState, f: FormData): P
   await requireVay();
   const contact_name = str(f, "contact_name");
   const email = lower(str(f, "email"));
+  const phone = str(f, "phone");
+  const others = parseRows(str(f, "others"));
   const closed_on = str(f, "closed_on");
   const end_date = str(f, "end_date");
   const legs: Leg[] = [0, 1, 2]
@@ -167,18 +170,44 @@ export async function createDeal(afiliado: string, _: FormState, f: FormData): P
 
   if (!contact_name) return { error: "Informe o nome do cliente." };
   if (email && !isEmail(email)) return { error: "E-mail inválido." };
+  if (others.some((o) => o.email && !isEmail(o.email))) return { error: "Confira o e-mail dos outros passageiros." };
   if (!isIsoDate(closed_on) || !isIsoDate(end_date)) return { error: "Informe as datas de fechamento e de volta." };
   if (!legs.length) return { error: "Informe pelo menos um trecho (cidade e data)." };
   if (legs.some((l) => !cityOf(l.city) || !isIsoDate(l.date))) return { error: "Confira as cidades e datas dos trechos." };
   if (voo + hotel + seguro <= 0) return { error: "Informe o valor de pelo menos um produto." };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: deal, error } = await supabase
     .from("deals")
-    .insert({ contact_name, email, afiliado, closed_on, end_date, legs, voo, hotel, seguro });
-  if (error) return { error: "Não foi possível registrar o negócio." };
+    .insert({ afiliado, closed_on, end_date, legs, voo, hotel, seguro })
+    .select("id")
+    .single();
+  if (error || !deal) return { error: "Não foi possível registrar o negócio." };
+  const passengers = [
+    { name: contact_name, email, phone, is_titular: true },
+    ...others.map((o) => ({ name: o.name, email: lower(o.email), phone: o.phone, is_titular: false })),
+  ].map((p, position) => ({ ...p, deal_id: deal.id, position }));
+  const { error: pErr } = await supabase.from("deal_passengers").insert(passengers);
+  if (pErr) {
+    await supabase.from("deals").delete().eq("id", deal.id);
+    return { error: "Não foi possível registrar os passageiros do negócio." };
+  }
   revalidatePath("/", "layout");
   return { ok: "Negócio registrado e vinculado pelas regras de afiliado, data e destino." };
+}
+
+// Sincronização sob demanda (a agendada usa /api/cron/sync).
+export async function syncNow(): Promise<FormState> {
+  await requireVay();
+  const r = await syncHubspot(createAdminClient());
+  revalidatePath("/", "layout");
+  if (!r.ok) return { error: `Falha na sincronização: ${r.error}` };
+  return {
+    ok:
+      plural(r.deals, "negócio sincronizado", "negócios sincronizados") +
+      (r.skipped.length ? ` · ${r.skipped.length} sem roteiro, data de volta ou fechamento (${r.skipped.join(", ")})` : "") +
+      ".",
+  };
 }
 
 // ---------------------------------------------------------------- Parceiros
