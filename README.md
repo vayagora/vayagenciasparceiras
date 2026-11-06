@@ -40,7 +40,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 2. Em **Environment Variables**, preencha as variáveis de `.env.example`:
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
    - `NEXT_PUBLIC_SITE_URL`: o endereço final (ex.: `https://vayagenciasparceiras.vercel.app`)
-   - HubSpot (quando for ligar a sincronização): `HUBSPOT_TOKEN` e, se os nomes internos forem diferentes, as variáveis `HUBSPOT_PROP_*`. `CRON_SECRET` para a sincronização agendada.
+   - HubSpot (quando for ligar a sincronização): `HUBSPOT_TOKEN`, e as demais `HUBSPOT_*` só se forem diferentes do padrão. `CRON_SECRET` para a sincronização agendada. Mapeamento dos campos em `docs/HUBSPOT.md`.
 3. Clique em **Deploy**.
 4. De volta ao Supabase, em **Authentication › URL Configuration**, coloque esse mesmo endereço em **Site URL**.
 

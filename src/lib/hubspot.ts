@@ -1,6 +1,9 @@
 // Cliente HubSpot (app privado) + conversões puras usadas na sincronização (SPEC §4.4, §6).
-// Segredos e nomes internos de propriedades vêm de variáveis de ambiente (ver .env.example).
-import { CITIES } from "./cities";
+// Layout dos campos do negócio na conta da Vay Agora: ver docs/HUBSPOT.md.
+// Segredos e o que pode mudar vêm de variáveis de ambiente (ver .env.example).
+import { AIRPORT_ALIASES, AIRPORTS } from "./airports";
+import { CITIES, cityOf, nearestCity } from "./cities";
+import type { Product } from "./commission";
 import type { Leg } from "./types";
 
 const API = "https://api.hubapi.com";
@@ -9,14 +12,7 @@ export type HubspotConfig = {
   token: string;
   wonStages: string[];
   titularLabel: string;
-  props: {
-    afiliado: string;
-    roteiro: string;
-    dataVolta: string;
-    voo: string;
-    hotel: string;
-    seguro: string;
-  };
+  afiliadoProp: string;
 };
 
 export function hubspotConfig(env: Record<string, string | undefined> = process.env): HubspotConfig | null {
@@ -24,17 +20,48 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
   if (!token) return null;
   return {
     token,
-    wonStages: (env.HUBSPOT_WON_STAGES ?? "closedwon").split(",").map((s) => s.trim()).filter(Boolean),
+    // 135525686 = "Emissão Realizada" no funil "Pipeline de Vendas"
+    wonStages: (env.HUBSPOT_WON_STAGES ?? "135525686").split(",").map((s) => s.trim()).filter(Boolean),
     titularLabel: env.HUBSPOT_TITULAR_LABEL ?? "Titular",
-    props: {
-      afiliado: env.HUBSPOT_PROP_AFILIADO ?? "afiliado",
-      roteiro: env.HUBSPOT_PROP_ROTEIRO ?? "roteiro",
-      dataVolta: env.HUBSPOT_PROP_DATA_VOLTA ?? "data_volta",
-      voo: env.HUBSPOT_PROP_VALOR_VOO ?? "valor_voo",
-      hotel: env.HUBSPOT_PROP_VALOR_HOSPEDAGEM ?? "valor_hospedagem",
-      seguro: env.HUBSPOT_PROP_VALOR_SEGURO ?? "valor_seguro",
-    },
+    afiliadoProp: env.HUBSPOT_PROP_AFILIADO ?? "agencia_parceira",
   };
+}
+
+// Campos do negócio na conta da Vay Agora (nomes internos; os rótulos estão ao lado).
+// Os nomes internos de alguns trechos não batem com o rótulo: vale o rótulo.
+export const FIELDS = {
+  servico: "servico", // Serviço: o que está sendo comercializado
+  amount: "amount", // Valor do negócio
+  trechos: [
+    { dest: "aeroporto_de_partida", date: "data_da_volta_" }, // Destino/Data - Trecho 1
+    { dest: "aeroporto_de_chegada___trecho_2", date: "data_de_chegada___trecho_2" }, // Trecho 2
+    { dest: "destino___trecho_3", date: "data_da_ida_" }, // Trecho 3
+    { dest: "destino___trecho_4", date: "data_da_partida___trecho_2" }, // Trecho 4
+    { dest: "destino___trecho_5", date: "data___trecho_5" }, // Trecho 5
+    { dest: "destino___trecho_6", date: "data___trecho_6" }, // Trecho 6
+  ],
+  hotel: { city: "cidade__hotel_", start: "data_de_checkin", end: "data_de_checkout" },
+  seguro: { dest: "destino__seguro_", start: "data_de_inicio_da_viagem", end: "data_de_termino_da_viagem__seguro_" },
+} as const;
+
+// Valor do campo "Serviço" → produto comissionado. Outros serviços não geram comissão.
+export const SERVICE_PRODUCT: Record<string, Product> = {
+  "Passagem Aérea": "voo",
+  Hospedagem: "hotel",
+  "Seguro Viagem": "seguro",
+};
+
+export function dealProperties(cfg: HubspotConfig): string[] {
+  return [
+    "closedate",
+    "dealstage",
+    cfg.afiliadoProp,
+    FIELDS.servico,
+    FIELDS.amount,
+    ...FIELDS.trechos.flatMap((t) => [t.dest, t.date]),
+    ...Object.values(FIELDS.hotel),
+    ...Object.values(FIELDS.seguro),
+  ];
 }
 
 // ---------------------------------------------------------------- Conversões puras
@@ -43,10 +70,11 @@ const fold = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 const CITY_BY_FOLD = new Map(CITIES.map((c) => [fold(c.name), c.name]));
 
-// Nome da cidade como está na lista de destinos (ignora acentos e maiúsculas).
-// Cidade fora da lista fica como veio (não casa com expedição até a geocodificação entrar).
+// Nome da cidade como está na lista de destinos (ignora acentos e maiúsculas; "Bangkok, Tailândia" → "Bangkok").
+// Cidade fora da lista fica como veio.
 export function normalizeCity(name: string): string {
-  return CITY_BY_FOLD.get(fold(name)) ?? name.trim();
+  const raw = String(name ?? "").trim();
+  return CITY_BY_FOLD.get(fold(raw)) ?? CITY_BY_FOLD.get(fold(raw.split(",")[0])) ?? raw.split(",")[0].trim();
 }
 
 // "AAAA-MM-DD", timestamp em ms ou ISO com hora → data no fuso de São Paulo.
@@ -59,28 +87,58 @@ export function toIsoDate(v: string | number | null | undefined): string | null 
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
 }
 
-// Roteiro: JSON [{"city":"Madrid","date":"2026-11-13"}] ou texto "Lisboa|2026-11-09;Madrid|2026-11-13".
-export function parseRoteiro(raw: string | null | undefined): Leg[] {
-  const s = String(raw ?? "").trim();
-  if (!s) return [];
+// Opção do campo "Destino - Trecho N" (ex.: "BKK – Bangkok, Thailand – Bangkok Intl Airport,") → cidade + coordenadas.
+// Aeroporto a até 60 km de uma cidade da lista vira essa cidade (GRU → São Paulo), para o vínculo exato funcionar.
+export function airportPlace(value: string): Omit<Leg, "date"> | null {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  const code = AIRPORT_ALIASES[v] ?? v.match(/^([A-Z0-9]{3})\s*[–-]/)?.[1];
+  const ap = code ? AIRPORTS[code] : undefined;
+  if (ap) {
+    const [city, lat, lng] = ap;
+    const near = nearestCity(lat, lng);
+    return near ? { city: near.name, lat: near.lat, lng: near.lng } : { city, lat, lng };
+  }
+  const name = v.replace(/^[A-Z0-9]{3}\s*[–-]\s*/, "");
+  return { city: normalizeCity(name) };
+}
+
+function textPlace(text: string | null | undefined): Omit<Leg, "date"> | null {
+  const t = String(text ?? "").trim();
+  if (!t) return null;
+  const city = normalizeCity(t);
+  const c = cityOf(city);
+  return c ? { city, lat: c.lat, lng: c.lng } : { city };
+}
+
+export type Trip = { product: Product; value: number; legs: Leg[]; end: string };
+
+// Lê produto, valor e roteiro de um negócio. Devolve o motivo quando não dá para usar.
+export function readTrip(p: Record<string, string | null | undefined>): Trip | { skip: string } {
+  const servico = String(p[FIELDS.servico] ?? "").trim();
+  const product = SERVICE_PRODUCT[servico];
+  if (!product) return { skip: servico ? `serviço "${servico}" não gera comissão` : "campo Serviço vazio" };
+  const value = money(p[FIELDS.amount]);
+  if (value <= 0) return { skip: "valor do negócio vazio" };
+
   let legs: Leg[] = [];
-  if (s.startsWith("[")) {
-    try {
-      const arr = JSON.parse(s) as { city?: string; date?: string }[];
-      legs = arr.map((x) => ({ city: String(x.city ?? ""), date: String(x.date ?? "") }));
-    } catch {
-      return [];
+  let end: string | null = null;
+  if (product === "voo") {
+    for (const t of FIELDS.trechos) {
+      const place = airportPlace(String(p[t.dest] ?? ""));
+      const date = toIsoDate(p[t.date]);
+      if (place && date) legs.push({ ...place, date });
     }
   } else {
-    legs = s.split(/[;\n]/).map((part) => {
-      const [city = "", date = ""] = part.split("|");
-      return { city, date };
-    });
+    const f = product === "hotel" ? { place: textPlace(p[FIELDS.hotel.city]), start: p[FIELDS.hotel.start], end: p[FIELDS.hotel.end] }
+      : { place: textPlace(p[FIELDS.seguro.dest]), start: p[FIELDS.seguro.start], end: p[FIELDS.seguro.end] };
+    const start = toIsoDate(f.start);
+    if (f.place && start) legs = [{ ...f.place, date: start }];
+    end = toIsoDate(f.end);
   }
-  return legs
-    .map((l) => ({ city: normalizeCity(l.city), date: toIsoDate(l.date) ?? "" }))
-    .filter((l) => l.city && l.date)
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  legs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (!legs.length) return { skip: "sem destino e data (trechos, check-in ou vigência)" };
+  return { product, value, legs, end: end ?? legs[legs.length - 1].date };
 }
 
 export function money(v: string | number | null | undefined): number {
@@ -146,7 +204,7 @@ export type HsDeal = { id: string; properties: Record<string, string | null> };
 // Negócios ganhos com "afiliado" preenchido. Lê todos a cada sincronização para pegar
 // também mudanças nas associações (que não alteram a data de modificação do negócio).
 export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
-  const props = ["closedate", "dealstage", ...Object.values(cfg.props)];
+  const props = dealProperties(cfg);
   const out: HsDeal[] = [];
   let after: string | undefined;
   do {
@@ -158,7 +216,7 @@ export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
           {
             filters: [
               { propertyName: "dealstage", operator: "IN", values: cfg.wonStages },
-              { propertyName: cfg.props.afiliado, operator: "HAS_PROPERTY" },
+              { propertyName: cfg.afiliadoProp, operator: "HAS_PROPERTY" },
             ],
           },
         ],

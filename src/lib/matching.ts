@@ -54,7 +54,7 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Expedition,
 
   let best: { city: string; km: number } | null = null;
   for (const l of deal.legs) {
-    const c = cityOf(l.city);
+    const c = typeof l.lat === "number" && typeof l.lng === "number" ? { lat: l.lat, lng: l.lng } : cityOf(l.city);
     if (!c) continue;
     const dist = l.city === exp.city ? 0 : Math.round(kmBetween(c, ec));
     if (dist <= tol.radiusKm && (!best || dist < best.km)) best = { city: l.city, km: dist };

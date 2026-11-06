@@ -82,7 +82,7 @@ export function cityLabel(name: string): string {
   return BY_NAME.get(name)?.label ?? name;
 }
 
-export function kmBetween(a: City, b: City): number {
+export function kmBetween(a: Pick<City, "lat" | "lng">, b: Pick<City, "lat" | "lng">): number {
   const R = 6371;
   const toR = Math.PI / 180;
   const dLat = (b.lat - a.lat) * toR;
@@ -91,4 +91,14 @@ export function kmBetween(a: City, b: City): number {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// Cidade da lista mais próxima de um ponto, até maxKm (ex.: aeroporto GRU → São Paulo).
+export function nearestCity(lat: number, lng: number, maxKm = 60): City | undefined {
+  let best: { c: City; km: number } | undefined;
+  for (const c of CITIES) {
+    const km = kmBetween({ lat, lng }, c);
+    if (km <= maxKm && (!best || km < best.km)) best = { c, km };
+  }
+  return best?.c;
 }

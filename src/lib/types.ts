@@ -42,7 +42,8 @@ export type Client = {
   created_at: string;
 };
 
-export type Leg = { city: string; date: string };
+// Trecho do roteiro. lat/lng vêm do aeroporto (HubSpot); sem eles, usa a lista de cidades.
+export type Leg = { city: string; date: string; lat?: number; lng?: number };
 
 // Passageiro do negócio (espelho das associações negócio → contato no HubSpot).
 // O parceiro só recebe do banco os passageiros que ele cadastrou (RLS).

@@ -109,6 +109,33 @@ describe("vínculo negócio → expedição", () => {
     expect(r.needsReview).toBe(true);
   });
 
+  it("roteiro com coordenadas de aeroporto: cidade fora da lista casa pelo raio", () => {
+    const bangkok: Expedition = { ...madrid, id: "eBkk", city: "Bangkok", start_date: "2026-12-01", days: 15 };
+    // U-Tapao (Pattaya), ~140 km de Bangkok; não está na lista de cidades
+    const d = deal({ legs: [{ city: "Pattaya", date: "2026-11-30", lat: 12.68, lng: 101.005 }], end_date: "2026-12-16" });
+    const [r] = resolveDeals([d], [partner], [bangkok], [ana]);
+    expect(r.exp?.id).toBe("eBkk");
+    expect(flagKeys(r)).toContain("aprox");
+    expect(r.reason).toMatch(/Pattaya fica a 1\d\d km de Bangkok/);
+  });
+
+  it("roteiro real do HubSpot (Dubai → Bangkok → Rio → BH) vincula à expedição de Bangkok", () => {
+    const bangkok: Expedition = { ...madrid, id: "eBkk", city: "Bangkok", start_date: "2026-12-01", days: 15 };
+    const d = deal({
+      legs: [
+        { city: "Dubai", date: "2026-11-27", lat: 25.25, lng: 55.36 },
+        { city: "Bangkok", date: "2026-11-28", lat: 13.75, lng: 100.5 },
+        { city: "Rio de Janeiro", date: "2026-12-16" },
+        { city: "Belo Horizonte", date: "2026-12-19" },
+      ],
+      end_date: "2026-12-19",
+      voo: 23570, hotel: 0, seguro: 0,
+    });
+    const [r] = resolveDeals([d], [partner], [madrid, bangkok], [ana]);
+    expect(r.exp?.id).toBe("eBkk");
+    expect(r.com.total).toBeCloseTo(471.4);
+  });
+
   it("comissão 2% / 3% / 5% sobre o valor do negócio", () => {
     const [r] = resolveDeals([deal()], [partner], [madrid], [ana]);
     expect(r.com.voo).toBeCloseTo(160);

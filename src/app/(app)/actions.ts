@@ -205,7 +205,11 @@ export async function syncNow(): Promise<FormState> {
   return {
     ok:
       plural(r.deals, "negócio sincronizado", "negócios sincronizados") +
-      (r.skipped.length ? ` · ${r.skipped.length} sem roteiro, data de volta ou fechamento (${r.skipped.join(", ")})` : "") +
+      (r.skipped.length
+        ? ` · ${r.skipped.length} ignorado${r.skipped.length === 1 ? "" : "s"}: ` +
+          r.skipped.slice(0, 5).map((x) => `#${x.id} (${x.reason})`).join(", ") +
+          (r.skipped.length > 5 ? "…" : "")
+        : "") +
       ".",
   };
 }

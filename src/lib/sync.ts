@@ -3,10 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dealContacts,
   hubspotConfig,
-  money,
-  parseRoteiro,
   pickTitular,
   readContacts,
+  readTrip,
   searchWonDeals,
   toIsoDate,
   type Association,
@@ -14,6 +13,7 @@ import {
   type HsDeal,
   type HubspotConfig,
 } from "./hubspot";
+import type { Leg } from "./types";
 
 export type PassengerRow = {
   hubspot_contact_id: string;
@@ -49,25 +49,42 @@ export function planPassengers(
   return { rows, labeled };
 }
 
-export function mapDeal(d: HsDeal, cfg: HubspotConfig) {
+// Negócio do HubSpot → linha de deals. O valor do negócio vai para a coluna do produto (Serviço).
+export type DealRow = {
+  hubspot_id: string;
+  afiliado: string;
+  closed_on: string;
+  legs: Leg[];
+  end_date: string;
+  voo: number;
+  hotel: number;
+  seguro: number;
+};
+
+export function mapDeal(d: HsDeal, cfg: HubspotConfig): { row: DealRow } | { skip: string } {
   const p = d.properties;
-  const legs = parseRoteiro(p[cfg.props.roteiro]);
-  const end = toIsoDate(p[cfg.props.dataVolta]) ?? legs.at(-1)?.date ?? null;
+  const afiliado = String(p[cfg.afiliadoProp] ?? "").trim();
+  if (!afiliado) return { skip: "sem agência parceira" };
   const closed = toIsoDate(p.closedate);
-  if (!legs.length || !end || !closed) return null;
+  if (!closed) return { skip: "sem data de fechamento" };
+  const trip = readTrip(p);
+  if ("skip" in trip) return { skip: trip.skip };
   return {
-    hubspot_id: d.id,
-    afiliado: String(p[cfg.props.afiliado] ?? "").trim(),
-    closed_on: closed,
-    legs,
-    end_date: end,
-    voo: money(p[cfg.props.voo]),
-    hotel: money(p[cfg.props.hotel]),
-    seguro: money(p[cfg.props.seguro]),
+    row: {
+      hubspot_id: d.id,
+      afiliado,
+      closed_on: closed,
+      legs: trip.legs,
+      end_date: trip.end,
+      voo: trip.product === "voo" ? trip.value : 0,
+      hotel: trip.product === "hotel" ? trip.value : 0,
+      seguro: trip.product === "seguro" ? trip.value : 0,
+    },
   };
 }
 
-export type SyncResult = { ok: boolean; deals: number; skipped: string[]; error?: string };
+export type Skipped = { id: string; reason: string };
+export type SyncResult = { ok: boolean; deals: number; skipped: Skipped[]; error?: string };
 
 export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
   const cfg = hubspotConfig();
@@ -87,15 +104,16 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     const hs = await searchWonDeals(cfg);
     const assocs = await dealContacts(cfg, hs.map((d) => d.id));
     const contacts = await readContacts(cfg, [...assocs.values()].flat().map((a) => a.contactId));
-    const skipped: string[] = [];
+    const skipped: Skipped[] = [];
     let n = 0;
 
     for (const h of hs) {
-      const row = mapDeal(h, cfg);
-      if (!row || !row.afiliado) {
-        skipped.push(h.id);
+      const mapped = mapDeal(h, cfg);
+      if ("skip" in mapped) {
+        skipped.push({ id: h.id, reason: mapped.skip });
         continue;
       }
+      const row = mapped.row;
       const list = assocs.get(h.id) ?? [];
       const { data: existing } = await admin.from("deals").select("id").eq("hubspot_id", h.id).maybeSingle();
       let firstSeen = new Map<string, string>();
