@@ -1,0 +1,263 @@
+/* Tokens copiados do design system "Vay Agora — Marca oficial". */
+/* ============================================================
+   Vay Agora — Color Tokens
+   Brand palette sampled from official logo set.
+   Primary = Roxo (purple). Accents = Azul, Vermelho, Amarelo, Blue Bell.
+   Neutrals run slightly warm/soft to stay human, never cold-SaaS.
+   ============================================================ */
+:root {
+  /* ---- Brand raw values (the "official" swatches) ---- */
+  --vay-purple:    #715BCA;   /* Roxo — primary */
+  --vay-blue:      #0078D0;   /* Azul */
+  --vay-red:       #D32A25;   /* Vermelho */
+  --vay-yellow:    #F6E384;   /* Amarelo */
+  --vay-bluebell:  #ACB4ED;   /* Blue Bell — soft periwinkle */
+  --vay-porcelain: #EDEFEF;   /* Porcelana — off-white surface */
+  --vay-black:     #16161B;   /* Preto — near-black ink */
+
+  /* ---- Purple scale (primary) ---- */
+  --purple-50:  #F2EFFB;
+  --purple-100: #E5DFF6;
+  --purple-200: #CBBFEC;
+  --purple-300: #AF9CE1;
+  --purple-400: #9079D6;
+  --purple-500: #715BCA;   /* base brand */
+  --purple-600: #5B45B2;
+  --purple-700: #473690;
+  --purple-800: #342968;
+  --purple-900: #221B43;
+
+  /* ---- Blue scale (accent) ---- */
+  --blue-50:  #E7F2FB;
+  --blue-100: #C7E1F6;
+  --blue-300: #5FAEE6;
+  --blue-500: #0078D0;
+  --blue-700: #0056A0;
+  --blue-900: #093A66;
+
+  /* ---- Red scale (accent / alert) ---- */
+  --red-50:  #FBEAE9;
+  --red-100: #F6CCCA;
+  --red-300: #E88A86;
+  --red-500: #D32A25;
+  --red-700: #A21C18;
+  --red-900: #6B1311;
+
+  /* ---- Yellow scale (accent / highlight) ---- */
+  --yellow-50:  #FEFBED;
+  --yellow-100: #FCF4CC;
+  --yellow-300: #F9EBA6;
+  --yellow-500: #F6E384;
+  --yellow-700: #D8BE4A;
+  --yellow-900: #8A7826;
+
+  /* ---- Blue Bell scale (soft accent) ---- */
+  --bluebell-50:  #F2F3FC;
+  --bluebell-100: #E4E6F9;
+  --bluebell-300: #C7CCF3;
+  --bluebell-500: #ACB4ED;
+  --bluebell-700: #7C86D2;
+
+  /* ---- Neutral / ink scale (slightly cool-warm slate) ---- */
+  --neutral-0:   #FFFFFF;
+  --neutral-50:  #F8F8FA;
+  --neutral-100: #EDEFEF;   /* porcelana */
+  --neutral-200: #E2E3E9;
+  --neutral-300: #CBCCD6;
+  --neutral-400: #A6A8B5;
+  --neutral-500: #7C7E8C;
+  --neutral-600: #5C5E6B;
+  --neutral-700: #43444F;
+  --neutral-800: #2A2B33;
+  --neutral-900: #16161B;   /* preto */
+
+  /* ============================================================
+     SEMANTIC ALIASES — author against these, not raw values.
+     ============================================================ */
+
+  /* Brand */
+  --color-primary:        var(--purple-500);
+  --color-primary-hover:  var(--purple-600);
+  --color-primary-press:  var(--purple-700);
+  --color-primary-soft:   var(--purple-50);
+  --color-on-primary:     #FFFFFF;
+
+  --color-accent-blue:    var(--blue-500);
+  --color-accent-red:     var(--red-500);
+  --color-accent-yellow:  var(--yellow-500);
+  --color-accent-bluebell:var(--bluebell-500);
+
+  /* Text */
+  --text-strong:   var(--neutral-900);
+  --text-body:     var(--neutral-700);
+  --text-muted:    var(--neutral-500);
+  --text-subtle:   var(--neutral-400);
+  --text-inverse:  #FFFFFF;
+  --text-on-soft:  var(--purple-700);
+  --text-link:     var(--purple-600);
+
+  /* Surfaces */
+  --surface-page:    #FFFFFF;
+  --surface-card:    #FFFFFF;
+  --surface-muted:   var(--neutral-100);   /* porcelana panels */
+  --surface-sunken:  var(--neutral-50);
+  --surface-inverse: var(--neutral-900);
+  --surface-brand:   var(--purple-500);
+  --surface-brand-soft: var(--purple-50);
+
+  /* Borders & lines */
+  --border-subtle:  var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --border-strong:  var(--neutral-400);
+  --border-brand:   var(--purple-500);
+
+  /* Feedback */
+  --color-success:  #1F8A5B;
+  --color-warning:  var(--yellow-700);
+  --color-danger:   var(--red-500);
+  --color-info:     var(--blue-500);
+
+  /* Focus */
+  --focus-ring: 0 0 0 3px var(--purple-200);
+}
+
+/* ============================================================
+   Vay Agora — Typography Tokens
+   Display  : Zujin  (rounded, expressive — the "Explorer" voice)
+   Text/UI  : Nortica (geometric grotesque — the "Caregiver" clarity)
+   ============================================================ */
+:root {
+  /* ---- Families ---- */
+  --font-display: "Zujin", "Nortica", system-ui, sans-serif;
+  --font-sans:    "Nortica", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Weights ---- */
+  --fw-light:    300; /* @kind font */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+
+  /* ---- Type scale (rem, 1rem = 16px) ---- */
+  --text-2xs:  0.6875rem;  /* 11px — micro labels */
+  --text-xs:   0.75rem;    /* 12px */
+  --text-sm:   0.875rem;   /* 14px */
+  --text-base: 1rem;       /* 16px — body default */
+  --text-md:   1.125rem;   /* 18px — lead body */
+  --text-lg:   1.375rem;   /* 22px */
+  --text-xl:   1.75rem;    /* 28px */
+  --text-2xl:  2.25rem;    /* 36px */
+  --text-3xl:  3rem;       /* 48px */
+  --text-4xl:  3.75rem;    /* 60px */
+  --text-5xl:  4.75rem;    /* 76px — hero display */
+
+  /* ---- Line heights ---- */
+  --leading-none:    1;
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- Letter spacing ---- */
+  --tracking-tight:  -0.02em;
+  --tracking-snug:   -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+  --tracking-caps:   0.12em;   /* all-caps tagline / eyebrow */
+
+  /* ============================================================
+     SEMANTIC ROLES
+     ============================================================ */
+  /* Display (Zujin) */
+  --type-display-font:    var(--font-display);
+  --type-display-weight:  var(--fw-bold);
+  --type-display-leading: var(--leading-tight);
+  --type-display-tracking:var(--tracking-tight);
+
+  /* Headings (Nortica, tight) */
+  --type-heading-font:    var(--font-sans);
+  --type-heading-weight:  var(--fw-semibold);
+  --type-heading-leading: var(--leading-snug);
+  --type-heading-tracking:var(--tracking-snug);
+
+  /* Body (Nortica) */
+  --type-body-font:    var(--font-sans);
+  --type-body-weight:  var(--fw-regular);
+  --type-body-leading: var(--leading-relaxed);
+
+  /* Eyebrow / caps label */
+  --type-eyebrow-font:    var(--font-sans);
+  --type-eyebrow-weight:  var(--fw-semibold);
+  --type-eyebrow-tracking:var(--tracking-caps);
+  --type-eyebrow-size:    var(--text-xs);
+}
+
+
+/* ============================================================
+   Vay Agora — Spacing, Radii, Shadows, Motion
+   Soft, generous rounding echoes the brand's rounded-tile motif.
+   Shadows are low and airy — light & contemporary, never heavy.
+   ============================================================ */
+:root {
+  /* ---- Spacing scale (4px base) ---- */
+  --space-0:   0;
+  --space-1:   0.25rem;  /* 4 */
+  --space-2:   0.5rem;   /* 8 */
+  --space-3:   0.75rem;  /* 12 */
+  --space-4:   1rem;     /* 16 */
+  --space-5:   1.5rem;   /* 24 */
+  --space-6:   2rem;     /* 32 */
+  --space-7:   2.5rem;   /* 40 */
+  --space-8:   3rem;     /* 48 */
+  --space-9:   4rem;     /* 64 */
+  --space-10:  5rem;     /* 80 */
+  --space-11:  6rem;     /* 96 */
+  --space-12:  8rem;     /* 128 */
+
+  /* ---- Radii (rounded-tile motif) ---- */
+  --radius-xs:   6px;
+  --radius-sm:   10px;
+  --radius-md:   16px;
+  --radius-lg:   22px;
+  --radius-xl:   30px;
+  --radius-2xl:  40px;
+  --radius-pill: 999px;
+
+  /* ---- Border widths ---- */
+  --border-thin:   1px;
+  --border-medium: 1.5px;
+  --border-thick:  2px;
+
+  /* ---- Shadows (soft, low, slightly cool) ---- */
+  --shadow-xs:  0 1px 2px rgba(22, 22, 27, 0.05);
+  --shadow-sm:  0 2px 6px rgba(22, 22, 27, 0.06);
+  --shadow-md:  0 8px 20px rgba(22, 22, 27, 0.08);
+  --shadow-lg:  0 16px 40px rgba(22, 22, 27, 0.10);
+  --shadow-xl:  0 28px 60px rgba(22, 22, 27, 0.14);
+  /* Brand-tinted lift for primary surfaces */
+  --shadow-brand: 0 14px 32px rgba(113, 91, 202, 0.28);
+
+  /* ---- Layout ---- */
+  --container-sm:  640px;  /* @kind spacing */
+  --container-md:  860px;  /* @kind spacing */
+  --container-lg:  1100px; /* @kind spacing */
+  --container-xl:  1320px; /* @kind spacing */
+  --gutter:        clamp(1.25rem, 4vw, 3rem); /* @kind spacing */
+
+  /* ---- Motion (calm, confident — slight ease, no bounce) ---- */
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1); /* @kind other */
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other */
+  --dur-fast:   140ms; /* @kind other */
+  --dur-base:   220ms; /* @kind other */
+  --dur-slow:   360ms; /* @kind other */
+
+  /* ---- Z-index ---- */
+  --z-base:    0;    /* @kind other */
+  --z-raised:  10;   /* @kind other */
+  --z-sticky:  100;  /* @kind other */
+  --z-overlay: 1000; /* @kind other */
+  --z-modal:   1100; /* @kind other */
+  --z-toast:   1200; /* @kind other */
+}
+
