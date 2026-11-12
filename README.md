@@ -11,7 +11,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 | **Agência parceira** | Painel com ganhos por trimestre, cria expedições, cadastra clientes (um a um ou por planilha CSV/colada do Excel) e acompanha a etapa de cada cliente. Só vê os próprios dados. |
 | **Equipe Vay Agora** | Visão geral de todos os parceiros, follow-ups pendentes, atualização de etapa e nota de cada cliente, conciliação dos negócios fechados, cadastro de parceiros e convites de acesso. |
 
-**Comissões:** Voo 2% · Hospedagem 3% · Seguro viagem 5%, sobre os negócios fechados com o *afiliado* do parceiro.
+**Comissões:** Passagem aérea 3% · Hospedagem 3% · Seguro viagem 5%, pagas em créditos na Vay Agora (acordo padrão em `public/docs/regras-de-negocio-padrao.pdf`).
 
 **Vínculo automático negócio → expedição:** mesmo afiliado + viagem entre 7 dias antes e 3 dias depois da expedição + cidade da expedição em algum trecho (ou uma cidade a até 700 km). Casos aproximados, com mais de uma expedição possível, ou de clientes fora da lista do parceiro aparecem para conferência manual na tela da expedição.
 
@@ -26,7 +26,7 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 ### 1. Supabase (banco e login)
 
 1. Crie uma conta em <https://supabase.com> e um projeto novo (região *South America (São Paulo)*).
-2. Em **SQL Editor › New query**, cole o conteúdo de `supabase/migrations/0001_init.sql` e clique em **Run**. Depois, numa nova query, faça o mesmo com `supabase/migrations/0002_passageiros.sql`.
+2. Em **SQL Editor › New query**, cole o conteúdo de `supabase/migrations/0001_init.sql` e clique em **Run**. Depois, numa nova query de cada vez, faça o mesmo com as demais migrações, em ordem (`0002` a `0006`).
 3. *(Opcional, para testar)* Rode também `supabase/seed_demo.sql`. Ele cria os 3 parceiros, as 6 expedições e os clientes do protótipo.
 4. Em **Authentication › Sign In / Providers**, desligue **Allow new users to sign up**. O acesso é só por convite.
 5. Em **Authentication › Emails**, troque o link dos modelos:

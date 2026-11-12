@@ -112,7 +112,7 @@ describe("vínculo negócio → expedição", () => {
     const d = deal({ passengers: [pax("Marcelo", { is_titular: true })] });
     const [r] = resolveDeals([d], [partner], [madrid], [ana]);
     expect(r.exp?.id).toBe("eMad");
-    expect(r.com.total).toBeCloseTo(370);
+    expect(r.com.total).toBeCloseTo(450);
     expect(flagKeys(r)).toEqual(["fora"]);
     expect(r.needsReview).toBe(true);
   });
@@ -141,15 +141,15 @@ describe("vínculo negócio → expedição", () => {
     });
     const [r] = resolveDeals([d], [partner], [madrid, bangkok], [ana]);
     expect(r.exp?.id).toBe("eBkk");
-    expect(r.com.total).toBeCloseTo(471.4);
+    expect(r.com.total).toBeCloseTo(707.1); // 3% de R$ 23.570
   });
 
-  it("comissão 2% / 3% / 5% sobre o valor do negócio", () => {
+  it("comissão 3% / 3% / 5% sobre o valor do negócio (acordo, item 4.1)", () => {
     const [r] = resolveDeals([deal()], [partner], [madrid], [ana]);
-    expect(r.com.voo).toBeCloseTo(160);
+    expect(r.com.voo).toBeCloseTo(240);
     expect(r.com.hotel).toBeCloseTo(180);
     expect(r.com.seguro).toBeCloseTo(30);
-    expect(r.com.total).toBeCloseTo(370);
+    expect(r.com.total).toBeCloseTo(450);
   });
 });
 
@@ -169,7 +169,7 @@ describe("negócios com vários passageiros", () => {
     expect(a.deals.map((r) => dealNo(r.deal))).toEqual(["#4512"]);
     expect(b.deals.map((r) => dealNo(r.deal))).toEqual(["#4512"]);
     expect(a.values).toEqual({ voo: 8000, hotel: 6000, seguro: 600 });
-    expect(a.com.total).toBeCloseTo(370);
+    expect(a.com.total).toBeCloseTo(450);
     expect(b.primary).toEqual([]);
     expect(b.included.map((r) => dealNo(r.deal))).toEqual(["#4512"]);
     expect(b.com.total).toBe(0);
@@ -177,7 +177,7 @@ describe("negócios com vários passageiros", () => {
     expect(b.stage).toBe("fechado");
 
     const t = l.expStats(madrid);
-    expect(t.total).toBeCloseTo(370);
+    expect(t.total).toBeCloseTo(450);
     expect(t.sold).toBe(14600);
     expect(t.deals).toBe(1);
     expect(t.closed).toBe(2);
@@ -203,7 +203,7 @@ describe("negócios com vários passageiros", () => {
     const line = l.clientLine(emerson);
     expect(line.hiddenPassengers).toBe(1);
     expect(line.unregistered).toEqual([]);
-    expect(line.com.total).toBeCloseTo(370);
+    expect(line.com.total).toBeCloseTo(450);
     expect(flagKeys(l.resolved[0])).not.toContain("fora");
   });
 
@@ -213,7 +213,7 @@ describe("negócios com vários passageiros", () => {
     const line = l.clientLine(gislaine);
     expect(line.primary.length).toBe(1);
     expect(line.values).toEqual({ voo: 8000, hotel: 6000, seguro: 600 });
-    expect(line.com.total).toBeCloseTo(370);
+    expect(line.com.total).toBeCloseTo(450);
     expect(line.unregistered.map((u) => u.passenger.name)).toEqual(["Emerson"]);
   });
 
@@ -232,11 +232,11 @@ describe("negócios com vários passageiros", () => {
     expect(g.deals.map((r) => dealNo(r.deal)).sort()).toEqual(["#4512", "#4600"]);
     expect(g.primary.map((r) => dealNo(r.deal))).toEqual(["#4600"]);
     expect(g.included.map((r) => dealNo(r.deal))).toEqual(["#4512"]);
-    expect(g.com.total).toBeCloseTo(20);
+    expect(g.com.total).toBeCloseTo(30);
 
     const t = l.expStats(madrid);
     expect(t.deals).toBe(2);
-    expect(t.total).toBeCloseTo(390); // 370 + 20, cada negócio uma vez
+    expect(t.total).toBeCloseTo(480); // 450 + 30, cada negócio uma vez
     expect(t.sold).toBe(15600);
     const sumOfLines = [emerson, gislaine].reduce((a, c) => a + l.clientLine(c).com.total, 0);
     expect(sumOfLines).toBeCloseTo(t.total);
@@ -276,7 +276,7 @@ describe("negócios não sinalizados no HubSpot", () => {
     expect(r.suggested?.id).toBe("eMad");
     expect(r.partner?.id).toBe("pA");
     expect(r.com.total).toBe(0);
-    expect(r.potential.total).toBeCloseTo(370);
+    expect(r.potential.total).toBeCloseTo(450);
     expect(flagKeys(r)).toEqual(["nao_sinalizado"]);
     expect(r.listEvidence).toBe(false);
     expect(r.fixes).toEqual([

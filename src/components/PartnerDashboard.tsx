@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addMoney, PRODUCTS, PROD_LABEL, STAGES, ZERO, type Money } from "@/lib/commission";
+import { addMoney, pct, PRODUCTS, PROD_LABEL, RATES, STAGES, ZERO, type Money } from "@/lib/commission";
 import { cityLabel } from "@/lib/cities";
 import type { World } from "@/lib/data";
 import { buildStatement } from "@/lib/balance";
@@ -73,6 +73,9 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
         <div className="row">
           {!isVay ? <Link href="/expedicoes?nova=1" className="btn primary">Iniciar expedição</Link> : null}
           <Link href={isVay ? `/expedicoes?parceiro=${partner.id}` : "/expedicoes"} className="btn outline">Ver expedições</Link>
+          <a href={isVay ? `/acordo-de-parceria?parceiro=${partner.id}` : "/acordo-de-parceria"} target="_blank" rel="noreferrer" className="btn outline">
+            Acordo de parceria
+          </a>
         </div>
       </div>
 
@@ -153,9 +156,9 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
       </section>
 
       <div className="grid-rates">
-        <RateCard pct="2%" label="Por voo vendido" detail={`${periodShort}: ${brl(sum.voo)}`} bg="var(--blue-50)" fg="var(--blue-700)" />
-        <RateCard pct="3%" label="Por hospedagem vendida" detail={`${periodShort}: ${brl(sum.hotel)}`} bg="var(--purple-50)" fg="var(--purple-700)" />
-        <RateCard pct="5%" label="Por seguro viagem vendido" detail={`${periodShort}: ${brl(sum.seguro)}`} bg="var(--yellow-100)" fg="var(--yellow-900)" />
+        <RateCard pct={pct(RATES.voo)} label="Por voo vendido" detail={`${periodShort}: ${brl(sum.voo)}`} bg="var(--blue-50)" fg="var(--blue-700)" />
+        <RateCard pct={pct(RATES.hotel)} label="Por hospedagem vendida" detail={`${periodShort}: ${brl(sum.hotel)}`} bg="var(--purple-50)" fg="var(--purple-700)" />
+        <RateCard pct={pct(RATES.seguro)} label="Por seguro viagem vendido" detail={`${periodShort}: ${brl(sum.seguro)}`} bg="var(--yellow-100)" fg="var(--yellow-900)" />
       </div>
 
       <section className="card">
@@ -171,9 +174,9 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
               <tr>
                 <th>Expedição</th>
                 <th className="num">Negócios</th>
-                <th className="num">Voos · 2%</th>
-                <th className="num">Hospedagem · 3%</th>
-                <th className="num">Seguro · 5%</th>
+                <th className="num">Voos · {pct(RATES.voo)}</th>
+                <th className="num">Hospedagem · {pct(RATES.hotel)}</th>
+                <th className="num">Seguro · {pct(RATES.seguro)}</th>
                 <th className="num">Total</th>
               </tr>
             </thead>

@@ -34,7 +34,7 @@ Cada negócio vende um serviço (campo **Serviço**, `servico`). O valor é o **
 
 | Serviço | Produto no sistema | Comissão |
 |---|---|---|
-| Passagem Aérea (rótulo "Aéreo") | voo | 2% |
+| Passagem Aérea (rótulo "Aéreo") | voo | 3% |
 | Hospedagem | hospedagem | 3% |
 | Seguro Viagem | seguro | 5% |
 | Outros (Pacote, Transfer, Passeio…) | — | não entram (aparecem como ignorados na sincronização) |
@@ -91,5 +91,4 @@ Contatos associados ao negócio; o rótulo de associação "Titular" (`HUBSPOT_T
 
 ## App privado
 
-Escopos: `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.objects.deals.read`, `crm.objects.companies.read`,
-`crm.schemas.deals.write`. O token vai em `HUBSPOT_TOKEN` (Vercel › Settings › Environment Variables).
+Escopos (só leitura): `crm.objects.deals.read`, `crm.objects.contacts.read`, `crm.objects.companies.read`. O token vai em `HUBSPOT_TOKEN` (Vercel › Settings › Environment Variables).

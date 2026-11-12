@@ -125,6 +125,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     `);
     await db.query(sql("0004_saldo_etapas_anexos.sql"));
     await db.query(sql("0005_anexos_storage.sql"));
+    await db.query(sql("0006_acordo.sql"));
     await db.query(GRANTS);
   });
 
@@ -254,12 +255,26 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     });
   });
 
+  it("acordo de parceria: parceiro baixa só o próprio; só a Vay envia", async () => {
+    await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1), ('anexos', $2)`, [
+      `acordos/${ID.partnerA}/acordo-a.pdf`,
+      `acordos/${ID.partnerB}/acordo-b.pdf`,
+    ]);
+    await as(ID.pa, async () => {
+      const names = (await rows(`select name from storage.objects where name like 'acordos/%'`)).map((r) => r.name);
+      expect(names).toEqual([`acordos/${ID.partnerA}/acordo-a.pdf`]);
+      await denied(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`acordos/${ID.partnerA}/meu.pdf`]);
+      await expect(db.query(`update partners set agreement_path = 'x' where id = $1`, [ID.partnerA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
     await db.query(sql("0002_passageiros.sql"));
     await db.query(sql("0003_nao_sinalizados.sql"));
     await db.query(sql("0004_saldo_etapas_anexos.sql"));
+    await db.query(sql("0006_acordo.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

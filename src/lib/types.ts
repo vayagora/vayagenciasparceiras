@@ -13,6 +13,9 @@ export type Partner = {
   name: string;
   afiliado: string;
   contact_email: string | null;
+  // Acordo próprio no Storage; null = acordo padrão
+  agreement_path?: string | null;
+  agreement_name?: string | null;
   created_at: string;
 };
 

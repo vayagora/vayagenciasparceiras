@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PartnerDashboard } from "@/components/PartnerDashboard";
 import { loadWorld, requireVay } from "@/lib/data";
 import { InvitePartnerUser } from "../forms";
+import { AgreementManager } from "./AgreementManager";
 
 export const metadata = { title: "Painel do parceiro" };
 
@@ -19,6 +20,7 @@ export default async function PartnerPage({
   return (
     <>
       <PartnerDashboard partner={partner} world={world} isVay year={sp.ano} quarter={sp.tri} basePath={`/parceiros/${id}`} />
+      <AgreementManager partnerId={partner.id} name={partner.agreement_name ?? null} />
       <section className="card pad stack">
         <h2 className="section-title">Acesso do parceiro</h2>
         <p className="muted small">

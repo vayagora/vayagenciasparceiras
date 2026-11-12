@@ -1,6 +1,13 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.1 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros")
+Versão 1.2 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+"Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.2:** passagem aérea passa a 3% (acordo, item 4.1); saldo e extrato de créditos; etapa do cliente
+pelo HubSpot (não contactado · em negociação · compra concluída) + marcações manuais da Vay; modal de voo,
+hospedagem e seguro com comentários e arquivos; observação do HubSpot; expedição com destino livre, datas de
+início e fim e aeroportos preferenciais; negócio de agência = origem "Afiliado" + empresa associada; negócios
+encontrados por destino e data mas não sinalizados; botão do acordo de parceria. Afeta §1, §3, §4, §5, §6 e §7.
 
 **Mudanças na 1.1:** negócios com vários passageiros (ex.: casal em um único negócio). Uma linha por passageiro, com o número do negócio; valores e comissão contados uma vez por negócio. Afeta §3, §4.2, §4.3, §4.4, §5, §6 e §8.
 
@@ -10,11 +17,15 @@ Empresas parceiras da Vay Agora organizam **expedições** (viagens em grupo: co
 
 | Produto | Comissão do parceiro |
 |---|---|
-| Voo | 2% |
+| Passagem aérea | 3% |
 | Hospedagem | 3% |
 | Seguro viagem | 5% |
 
 A comissão é calculada sobre o **valor do negócio**, não por passageiro. Um negócio com dois passageiros gera uma única comissão sobre o valor total.
+
+A comissão é paga em **créditos na Vay Agora**, sem validade, que a agência usa para emitir qualquer serviço da Vay (acordo, item 4.2). O **saldo** é: comissões dos negócios vinculados + entradas lançadas pela Vay (ex.: bonificações) − saídas (uso dos créditos).
+
+O acordo de parceria padrão é o PDF "Regras de Negócio Padrões"; a Vay pode substituir por um documento próprio de cada parceiro.
 
 ## 2. Perfis e acesso
 
@@ -39,14 +50,21 @@ A comissão é calculada sobre o **valor do negócio**, não por passageiro. Um 
 - **Vínculo negócio → expedição**: expedição (ou nenhuma), método (`auto` | `manual`), motivo (texto), sinalizações, conferido por/em.
 - **Fechamento de período**: trimestre, parceiro, valores congelados.
 
-Etapas de follow-up: Aguardando contato · Em contato · Proposta enviada · Compra concluída · Desistiu. Se o cliente é **passageiro** de um negócio vinculado à expedição (titular ou não), a etapa exibida é "Compra concluída".
+Etapa do cliente (calculada a cada sincronização, considerando só negócios **compatíveis com a expedição** por destino e data em que o cliente é passageiro):
+
+- **Compra concluída**: negócio na etapa de venda concluída ("Emissão Realizada"), ou o cliente é passageiro de um negócio vinculado à expedição. Prevalece sobre tudo.
+- **Não contactar** / **Comprou em outro lugar**: marcação manual da Vay.
+- **Em negociação**: negócio em qualquer etapa antes da compra (menos "Negócio perdido").
+- **Não contactado**: nenhum negócio no HubSpot.
+
+Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, Celular ou WhatsApp). A coluna **Observação** mostra o campo "Observações para parceiro" do contato (escrito no HubSpot).
 
 **Correspondência cliente ↔ passageiro:** mesmo ID de contato no HubSpot; sem ID, mesmo e-mail; sem e-mail, mesmo telefone normalizado (só dígitos, últimos 11).
 
 ## 4. Fluxos
 
 ### 4.1 Parceiro inicia expedição
-Campos: nome, destino (cidade geocodificada), data de início, duração (dias). Todos obrigatórios. Após criar, abre a tela da expedição com o cadastro de clientes aberto.
+Campos: nome, destino (texto livre), data de início, data de fim, **aeroporto preferencial de chegada** (obrigatório; é por ele que o sistema encontra as compras) e aeroporto preferencial de saída (opcional). Após criar, abre a tela da expedição com o cadastro de clientes aberto.
 
 ### 4.2 Parceiro cadastra clientes
 - **Uma pessoa por cadastro.** Casal ou família = um cadastro para cada pessoa (ex.: Emerson e Gislaine são dois clientes). Texto de apoio (tooltip) na tela de cadastro: "Cadastre cada viajante separadamente, mesmo quando viajam juntos."
@@ -110,9 +128,10 @@ Por cliente: etapa e nota. Salvar grava a data (fuso America/Sao_Paulo). Compras
 ## 5. Telas
 
 **Parceiro**
-- Painel: filtro Ano + Trimestre (jan–mar, abr–jun, jul–set, out–dez, ou ano inteiro). Padrão: último trimestre concluído em UTC−3. Período em andamento mostra aviso de valores parciais. Período = data de fechamento do negócio. Conteúdo: KPIs (ganhos, volume vendido, negócios fechados, clientes cadastrados), cartões 2%/3%/5% com ganhos do período, tabela "Ganhos por expedição" com total.
+- Painel: **Saldo atual** em destaque (com "Ver extrato") e botão "Acordo de parceria". Filtro Ano + Trimestre (jan–mar, abr–jun, jul–set, out–dez, ou ano inteiro). Padrão: último trimestre concluído em UTC−3. Período em andamento mostra aviso de valores parciais. Período = data de fechamento do negócio. Conteúdo, nesta ordem: KPIs (clientes cadastrados com compras concluídas em destaque, ganhos do período, negócios fechados — sem volume vendido), andamento dos clientes por expedição (compra concluída, em negociação, não contactados, cadastrados), cartões 3%/3%/5% com ganhos do período, tabela "Ganhos por expedição" com total.
+- Extrato: saldo atual, total recebido, total gasto e lançamentos (data, tipo, descrição, origem, valor, saldo) com filtro Tudo/Entradas/Saídas. Mesmo padrão do Portal do Comissário.
 - Expedições: em andamento/programadas; seção recolhida "Expedições finalizadas" (término já passou, UTC−3) com contagem e ganhos.
-- Expedição: faixa compacta de indicadores; cadastro manual; importação; tabela de clientes (etapa, **negócio**, voo, hospedagem, seguro, seu ganho, último follow-up). Vendas atribuídas a clientes fora da lista aparecem só como uma linha-resumo com o ganho.
+- Expedição: faixa compacta de indicadores; cadastro manual; importação; tabela de clientes (etapa, **negócio**, voo, hospedagem, seguro, seu ganho, **observação**). Com compra, o selo de voo/hospedagem/seguro abre um modal com os dados do HubSpot (trechos com horários e companhia; hotel; plano do seguro) e os comentários e arquivos que a Vay adicionou (o parceiro vê; só a Vay adiciona e apaga). Vendas atribuídas a clientes fora da lista aparecem só como uma linha-resumo com o ganho.
 
 **Tabela de clientes com vários passageiros por negócio** (parceiro e Vay):
 - **Uma linha por passageiro**, com a coluna **Negócio** mostrando o número (ou números, se estiver em mais de um negócio).
@@ -127,25 +146,27 @@ Exemplo:
 
 | Passageiro | Negócio | Voo | Hospedagem | Seguro | Ganho |
 |---|---|---|---|---|---|
-| Emerson | #4512 | R$ 8.000,00 | R$ 6.000,00 | R$ 600,00 | R$ 370,00 |
+| Emerson | #4512 | R$ 8.000,00 | R$ 6.000,00 | R$ 600,00 | R$ 450,00 |
 | Gislaine | #4512 | incluído no #4512 | | | — |
 
 **Vay Agora**
 - Visão geral: KPIs, expedições com pendências, resultado por parceiro, follow-ups pendentes, botão de sincronização.
 - Expedições: todas, filtro por parceiro, badge de pendências, seção de finalizadas recolhida.
 - Expedição: igual à do parceiro + tag HubSpot (novo/existente) por cliente + linhas de clientes fora da lista + linhas de passageiros não cadastrados + editor de follow-up + seção "Negócios do HubSpot".
-- Parceiros: cards; clicar abre o mesmo painel do parceiro (com filtros) + "Ver expedições".
+- Parceiros: cards; clicar abre o mesmo painel do parceiro (com filtros) + "Ver expedições" + acordo de parceria (abrir, enviar outro PDF, voltar ao padrão) + extrato com "Adicionar lançamento" (entrada ou saída).
+- Expedição (Vay): seção "Encontrados, mas não sinalizados no HubSpot": negócios ganhos com destino e data compatíveis, sem origem "Afiliado" e/ou sem a empresa da agência; não remuneram, dizem o que corrigir no HubSpot e destacam quando algum passageiro está na lista do parceiro.
 
 Textos de apoio ficam em tooltips (ícone "i").
 
 ## 6. Integração HubSpot
 
-- App privado com escopos: contatos (leitura/escrita), negócios (leitura), esquemas/propriedades de negócios (escrita, para manter as opções do "afiliado").
-- Contatos: busca/criação em lote por e-mail (upsert com `idProperty=email`).
-- Negócios: busca por estágio "ganho" + "afiliado" preenchido + modificados desde a última sincronização.
+- App privado com escopos de leitura: negócios, contatos e empresas. Mapeamento dos campos em `docs/HUBSPOT.md`.
+- **Negócio de agência parceira:** etapa "Emissão Realizada" + "Origem do Negócio" = "Afiliado" + a agência associada como **Empresa** do negócio (nome igual ao do parceiro no sistema).
+- **Não sinalizados:** a sincronização também lê os negócios ganhos com viagem perto das expedições; os que combinam por destino e data mas não estão sinalizados ficam visíveis só para a Vay (§5) e não remuneram até serem corrigidos no HubSpot.
+- **Produto e valor:** campo "Serviço" (Aéreo → passagem, Hospedagem, Seguro Viagem; outros serviços não remuneram) e "Valor do negócio".
+- **Roteiro:** trechos 1–6 (aeroporto de destino + data) no aéreo; cidade + check-in/out na hospedagem; destino + vigência no seguro. Aeroportos viram coordenadas pela tabela `src/lib/airports.ts`.
 - **Passageiros:** para cada negócio, ler as associações negócio → contatos (API de associações v4), com os rótulos de associação, e buscar nome, e-mail e telefone dos contatos em lote. O rótulo "Titular" (nome configurável por variável de ambiente) define o titular. Mudança nas associações de um negócio já sincronizado atualiza os passageiros na próxima sincronização.
-- Propriedades necessárias no negócio (nomes internos configuráveis por variável de ambiente): afiliado (dropdown), data de ida, data de volta, roteiro (trechos cidade+data — formato a definir, ex. JSON ou texto `Cidade|AAAA-MM-DD;...`), valor voo, valor hospedagem, valor seguro (ou itens de linha por categoria).
-- Cidades do roteiro são geocodificadas e guardadas em cache.
+- **Etapas e observação dos clientes:** negócios em aberto e ganhos compatíveis com a expedição; campo do contato "Observações para parceiro".
 - Falhas de API: novas tentativas com espera crescente; o erro é registrado e exibido à Vay.
 
 ## 7. Regras gerais

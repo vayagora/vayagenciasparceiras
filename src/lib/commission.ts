@@ -1,9 +1,13 @@
-// Regras de comissão: voo 2%, hospedagem 3%, seguro 5%, sobre o valor do negócio (uma vez por negócio).
+// Regras de comissão (acordo "Regras de Negócio Padrões", item 4.1): passagem aérea 3%, hospedagem 3%,
+// seguro viagem 5%, sobre o valor do negócio (uma vez por negócio).
 // O vínculo negócio → expedição fica em matching.ts; os totais, em ledger.ts.
 import { dayNum, todayIso } from "./format";
 import type { Deal, Expedition, StageId } from "./types";
 
-export const RATES = { voo: 0.02, hotel: 0.03, seguro: 0.05 } as const;
+export const RATES = { voo: 0.03, hotel: 0.03, seguro: 0.05 } as const;
+
+// "3%" para exibir
+export const pct = (r: number) => `${Math.round(r * 1000) / 10}%`.replace(".", ",");
 export type Product = keyof typeof RATES;
 export const PRODUCTS: Product[] = ["voo", "hotel", "seguro"];
 export const PROD_LABEL: Record<Product, string> = {

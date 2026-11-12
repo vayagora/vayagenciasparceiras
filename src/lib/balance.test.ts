@@ -23,15 +23,15 @@ describe("extrato do saldo", () => {
 
   it("comissões entram sozinhas; lançamentos manuais somam e subtraem; saldo corrente", () => {
     const st = buildStatement(jt, ledger, [entry("a", "in", 100, "2026-10-10"), entry("b", "out", 300, "2026-10-20"), entry("z", "in", 999, "2026-10-10", "pX")]);
-    // 9395 × 2% = 187,90 · 13160 × 2% = 263,20
+    // 9395 × 3% = 281,85 · 13160 × 3% = 394,80
     expect(st.rows.map((r) => [r.date, r.amount, r.balance])).toEqual([
-      ["2026-10-20", -300, 251.1],
-      ["2026-10-14", 263.2, 551.1],
-      ["2026-10-10", 100, 287.9],
-      ["2026-10-09", 187.9, 187.9],
+      ["2026-10-20", -300, 476.65],
+      ["2026-10-14", 394.8, 776.65],
+      ["2026-10-10", 100, 381.85],
+      ["2026-10-09", 281.85, 281.85],
     ]);
-    expect(st.balance).toBe(251.1);
-    expect(st.totalIn).toBe(551.1);
+    expect(st.balance).toBe(476.65);
+    expect(st.totalIn).toBe(776.65);
     expect(st.totalOut).toBe(300);
     expect(st.rows[0]).toMatchObject({ kind: "out", origin: "Manual · Gabriel", entryId: "b" });
     expect(st.rows[3]).toMatchObject({ kind: "in", title: "Comissão · Voo", sub: "Tailândia 2026", origin: "HubSpot · negócio #100" });

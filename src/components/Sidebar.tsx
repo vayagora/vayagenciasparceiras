@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/login/actions";
 
-type Item = { href: string; label: string; count?: number };
+type Item = { href: string; label: string; count?: number; external?: boolean };
 
 export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; email: string }) {
   const path = usePathname();
@@ -19,6 +19,7 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
         { href: "/painel", label: "Painel" },
         { href: "/expedicoes", label: "Expedições" },
         { href: "/extrato", label: "Extrato" },
+        { href: "/acordo-de-parceria", label: "Acordo de parceria", external: true },
       ];
   return (
     <aside className={`sidebar ${isVay ? "vay" : "parceiro"}`}>
@@ -27,11 +28,17 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
         <span>{isVay ? "Painel interno" : "Portal da agência"}</span>
       </div>
       <nav aria-label="Menu principal">
-        {items.map((it) => (
-          <Link key={it.href} href={it.href} className="navlink" aria-current={path.startsWith(it.href) ? "page" : undefined}>
-            {it.label}
-          </Link>
-        ))}
+        {items.map((it) =>
+          it.external ? (
+            <a key={it.href} href={it.href} className="navlink" target="_blank" rel="noreferrer">
+              {it.label}
+            </a>
+          ) : (
+            <Link key={it.href} href={it.href} className="navlink" aria-current={path.startsWith(it.href) ? "page" : undefined}>
+              {it.label}
+            </Link>
+          ),
+        )}
       </nav>
       <div className="me">
         <div>

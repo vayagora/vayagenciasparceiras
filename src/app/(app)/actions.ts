@@ -322,6 +322,21 @@ export async function syncNow(): Promise<FormState> {
   };
 }
 
+// ---------------------------------------------------------------- Acordo de parceria
+
+// O PDF já foi enviado ao Storage pelo navegador (anexos/acordos/<partner_id>/...).
+export async function setPartnerAgreement(partnerId: string, path: string | null, name: string | null): Promise<FormState> {
+  await requireVay();
+  if (path && !path.startsWith(`acordos/${partnerId}/`)) return { error: "Arquivo inválido." };
+  const supabase = await createClient();
+  const { data: prev } = await supabase.from("partners").select("agreement_path").eq("id", partnerId).single();
+  const { error } = await supabase.from("partners").update({ agreement_path: path, agreement_name: name }).eq("id", partnerId);
+  if (error) return { error: "Não foi possível salvar o acordo." };
+  if (prev?.agreement_path && prev.agreement_path !== path) await supabase.storage.from("anexos").remove([prev.agreement_path]);
+  revalidatePath("/", "layout");
+  return { ok: path ? "Acordo atualizado. O parceiro já vê o novo documento." : "Voltou ao acordo padrão." };
+}
+
 // ---------------------------------------------------------------- Parceiros
 
 async function siteUrl() {
