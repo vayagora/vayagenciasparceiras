@@ -22,6 +22,15 @@ create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
 grant usage on schema auth to authenticated, anon;
+create schema if not exists storage;
+create table if not exists storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint);
+create table if not exists storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
+create or replace function storage.foldername(name text) returns text[] language sql immutable as $$
+  select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1]
+$$;
+alter table storage.objects enable row level security;
+grant usage on schema storage to authenticated, anon;
+grant select, insert, update, delete on storage.objects to authenticated;
 grant execute on function auth.uid() to authenticated, anon;
 `;
 
@@ -59,6 +68,12 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     }
   }
   const rows = async (q: string, p: unknown[] = []) => (await db.query(q, p)).rows;
+  // Comando que deve ser barrado pelo RLS, sem abortar a transação do teste.
+  async function denied(q: string, p: unknown[] = []) {
+    await db.query("savepoint deny");
+    await expect(db.query(q, p)).rejects.toThrow(/row-level security/);
+    await db.query("rollback to savepoint deny");
+  }
 
   beforeAll(async () => {
     db = new Client({ connectionString: url });
@@ -102,7 +117,15 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
         ('${ID.dealA}', '901', 'Emerson Souza', 'emerson@email.com', '(11) 98888-1111', true, 0),
         ('${ID.dealA}', '902', 'Gislaine Souza', 'gislaine@email.com', '', false, 1),
         ('${ID.dealB}', '903', 'Bia Lopes', '', '+55 51 99999-0000', true, 0);
+      -- etapas antigas, para testar a conversão da 0004
+      insert into clients (expedition_id, name, email, phone, stage, note) values
+        ('${ID.expA}', 'Cliente Outro Canal', 'outro@email.com', '', 'desistiu', 'Comprou por outro canal. Milhas.'),
+        ('${ID.expA}', 'Cliente Sem Contato', 'semcontato@email.com', '', 'desistiu', 'Não quer contato.'),
+        ('${ID.expA}', 'Cliente Proposta', 'proposta@email.com', '', 'proposta', '');
     `);
+    await db.query(sql("0004_saldo_etapas_anexos.sql"));
+    await db.query(sql("0005_anexos_storage.sql"));
+    await db.query(GRANTS);
   });
 
   afterAll(async () => {
@@ -187,11 +210,56 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Bia Lopes", "Emerson Souza", "Gislaine Souza"]);
   });
 
+  it("0004 converte as etapas antigas na marcação manual", async () => {
+    const r = await rows(`select name, stage from clients where name like 'Cliente %' order by name`);
+    expect(r).toEqual([
+      { name: "Cliente Outro Canal", stage: "outro_lugar" },
+      { name: "Cliente Proposta", stage: "auto" },
+      { name: "Cliente Sem Contato", stage: "nao_contactar" },
+    ]);
+  });
+
+  it("parceiro só cadastra cliente com etapa automática e sem dados do HubSpot", async () => {
+    await as(ID.pa, async () => {
+      await db.query(`insert into clients (expedition_id, name, email) values ($1, 'Novo', 'novo@x.com')`, [ID.expA]);
+      await denied(`insert into clients (expedition_id, name, email, stage) values ($1, 'X', 'x@x.com', 'nao_contactar')`, [ID.expA]);
+      await expect(db.query(`update clients set stage = 'outro_lugar' where expedition_id = $1`, [ID.expA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+  });
+
+  it("saldo: parceiro lê só os próprios lançamentos e não lança nada", async () => {
+    await db.query(`insert into balance_entries (partner_id, kind, amount, title) values ($1, 'in', 100, 'Bônus A'), ($2, 'out', 50, 'Gasto B')`, [ID.partnerA, ID.partnerB]);
+    await as(ID.pa, async () => {
+      expect((await rows(`select title from balance_entries`)).map((r) => r.title)).toEqual(["Bônus A"]);
+      await denied(`insert into balance_entries (partner_id, kind, amount, title) values ($1, 'in', 1000, 'Eu mesmo')`, [ID.partnerA]);
+    });
+    expect(await as(ID.vay, () => rows(`select id from balance_entries`))).toHaveLength(2);
+  });
+
+  it("comentários e arquivos: parceiro vê só os dos próprios negócios; só a Vay grava", async () => {
+    await db.query(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'Bilhete A'), ($2, 'voo', 'Bilhete B')`, [ID.dealA, ID.dealB]);
+    await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1), ('anexos', $2), ('anexos', 'nao-e-uuid/voo/x.pdf')`, [
+      `${ID.dealA}/voo/a.pdf`,
+      `${ID.dealB}/voo/b.pdf`,
+    ]);
+    await as(ID.pa, async () => {
+      expect((await rows(`select body from deal_notes`)).map((r) => r.body)).toEqual(["Bilhete A"]);
+      expect((await rows(`select name from storage.objects`)).map((r) => r.name)).toEqual([`${ID.dealA}/voo/a.pdf`]);
+      await denied(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'x')`, [ID.dealA]);
+      await denied(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.dealA}/voo/c.pdf`]);
+    });
+    await as(ID.vay, async () => {
+      expect(await rows(`select name from storage.objects`)).toHaveLength(3);
+      await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.dealA}/voo/d.pdf`]);
+    });
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
     await db.query(sql("0002_passageiros.sql"));
     await db.query(sql("0003_nao_sinalizados.sql"));
+    await db.query(sql("0004_saldo_etapas_anexos.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

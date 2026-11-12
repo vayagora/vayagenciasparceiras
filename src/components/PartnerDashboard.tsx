@@ -2,7 +2,8 @@ import Link from "next/link";
 import { addMoney, PRODUCTS, PROD_LABEL, STAGES, ZERO, type Money } from "@/lib/commission";
 import { cityLabel } from "@/lib/cities";
 import type { World } from "@/lib/data";
-import { brl, lastClosedQuarter, QLABEL, quarterOf, todayIso } from "@/lib/format";
+import { buildStatement } from "@/lib/balance";
+import { brl, lastClosedQuarter, plural, QLABEL, quarterOf, todayIso } from "@/lib/format";
 import type { Partner } from "@/lib/types";
 import { PeriodFilter } from "./PeriodFilter";
 import { Kpi, Tip } from "./ui";
@@ -32,6 +33,9 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
   const sum = periodDeals.reduce((a, r) => addMoney(a, r.com), ZERO);
   const stats = exps.map((e) => ({ e, t: ledger.expStats(e) }));
   const totalClients = stats.reduce((a, x) => a + x.t.n, 0);
+  const totalClosed = stats.reduce((a, x) => a + x.t.closed, 0);
+  const statement = buildStatement(partner, ledger, world.entries);
+  const extratoHref = isVay ? `/parceiros/${partner.id}/extrato` : "/extrato";
 
   const periodShort = pQ === "all" ? `Ano de ${pYear}` : `${pQ}º tri/${pYear}`;
   const periodLabel = pQ === "all" ? `Ano de ${pYear} · jan–dez` : `${QLABEL[Number(pQ)]} de ${pYear}`;
@@ -72,6 +76,17 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
         </div>
       </div>
 
+      <section className="balance-card" aria-label="Saldo atual">
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="label">Saldo atual</span>
+          <span className="amount">{brl(statement.balance)}</span>
+          <span className="sub">
+            Entradas {brl(statement.totalIn)} · Saídas {brl(statement.totalOut)}
+          </span>
+        </div>
+        <Link href={extratoHref} className="btn-light">Ver extrato</Link>
+      </section>
+
       <div className="card pad row" style={{ justifyContent: "space-between" }}>
         <div className="stack" style={{ gap: 4 }}>
           <div className="eyebrow">Período dos ganhos</div>
@@ -84,11 +99,58 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
       </div>
 
       <div className="grid-kpi">
-        <Kpi accent label={isVay ? "Ganhos do parceiro no período" : "Seus ganhos no período"} value={brl(sum.total)} sub={periodShort} />
-        <Kpi label="Volume vendido pela Vay Agora" value={brl(sum.sold)} sub="Voos, hospedagens e seguros no período" />
+        <Kpi
+          label="Clientes cadastrados"
+          value={String(totalClients)}
+          sub={<span className="highlight">{plural(totalClosed, "compra concluída", "compras concluídas")}</span>}
+        />
+        <Kpi label={isVay ? "Ganhos do parceiro no período" : "Seus ganhos no período"} value={brl(sum.total)} sub={periodShort} />
         <Kpi label="Negócios fechados" value={String(periodDeals.length)} sub="No período selecionado" />
-        <Kpi label="Clientes cadastrados" value={String(totalClients)} sub={`${exps.length} ${exps.length === 1 ? "expedição" : "expedições"} · todos os períodos`} />
       </div>
+
+      <section className="card pad stack">
+        <div className="ttl">
+          <h2 className="section-title">Andamento dos clientes</h2>
+          <Tip>
+            {isVay
+              ? "Situação atual dos clientes que o parceiro cadastrou, em todas as expedições."
+              : "Situação atual dos clientes que você cadastrou, em todas as expedições."}
+          </Tip>
+        </div>
+        <div className="legend">
+          {STAGES.map((s) => (
+            <span key={s.id}><i style={{ background: s.color }} />{s.label}</span>
+          ))}
+        </div>
+        {stats.length === 0 ? <p className="muted">Nenhuma expedição ainda.</p> : null}
+        {stats.map(({ e, t }) => (
+          <div key={e.id} className="stack" style={{ gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+            <Link href={`/expedicoes/${e.id}`} className="strong">{e.name} · {cityLabel(e.city)}</Link>
+            <div className="stat-trio">
+              <div className="stat done"><span className="n">{t.closed}</span><span className="l">Compra concluída</span></div>
+              <div className="stat"><span className="n">{t.stages.negociacao ?? 0}</span><span className="l">Em negociação</span></div>
+              <div className="stat"><span className="n">{t.stages.novo ?? 0}</span><span className="l">Não contactados</span></div>
+              <div className="stat"><span className="n">{t.n}</span><span className="l">Cadastrados</span></div>
+            </div>
+            <div className="stagebar" aria-hidden={t.n === 0}>
+              {STAGES.filter((s) => t.stages[s.id]).map((s) => (
+                <span key={s.id} title={`${s.label}: ${t.stages[s.id]}`} style={{ flex: `${t.stages[s.id]} 1 0`, background: s.color }} />
+              ))}
+            </div>
+            <div className="grid-rates" style={{ gap: 12 }}>
+              {PRODUCTS.map((k) => (
+                <div key={k} className="stack" style={{ gap: 4 }}>
+                  <div className="row small" style={{ justifyContent: "space-between" }}>
+                    <span>{PROD_LABEL[k]} comprado</span>
+                    <span className="muted">{t.bought[k]} de {t.n}</span>
+                  </div>
+                  <div className="bar"><span style={{ width: `${Math.round((t.bought[k] / (t.n || 1)) * 100)}%`, background: "var(--purple-500)" }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </section>
 
       <div className="grid-rates">
         <RateCard pct="2%" label="Por voo vendido" detail={`${periodShort}: ${brl(sum.voo)}`} bg="var(--blue-50)" fg="var(--blue-700)" />
@@ -151,46 +213,6 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
         </div>
       </section>
 
-      <section className="card pad stack">
-        <div className="ttl">
-          <h2 className="section-title">Andamento dos clientes</h2>
-          <Tip>
-            {isVay
-              ? "Situação atual dos clientes que o parceiro cadastrou, em todas as expedições."
-              : "Situação atual dos clientes que você cadastrou, em todas as expedições."}
-          </Tip>
-        </div>
-        <div className="legend">
-          {STAGES.map((s) => (
-            <span key={s.id}><i style={{ background: s.color }} />{s.label}</span>
-          ))}
-        </div>
-        {stats.length === 0 ? <p className="muted">Nenhuma expedição ainda.</p> : null}
-        {stats.map(({ e, t }) => (
-          <div key={e.id} className="stack" style={{ gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <Link href={`/expedicoes/${e.id}`} className="strong">{e.name} · {cityLabel(e.city)}</Link>
-              <span className="small muted">{t.n} clientes · {t.closed} com compra concluída</span>
-            </div>
-            <div className="stagebar" aria-hidden={t.n === 0}>
-              {STAGES.filter((s) => t.stages[s.id]).map((s) => (
-                <span key={s.id} title={`${s.label}: ${t.stages[s.id]}`} style={{ flex: `${t.stages[s.id]} 1 0`, background: s.color }} />
-              ))}
-            </div>
-            <div className="grid-rates" style={{ gap: 12 }}>
-              {PRODUCTS.map((k) => (
-                <div key={k} className="stack" style={{ gap: 4 }}>
-                  <div className="row small" style={{ justifyContent: "space-between" }}>
-                    <span>{PROD_LABEL[k]} comprado</span>
-                    <span className="muted">{t.bought[k]} de {t.n}</span>
-                  </div>
-                  <div className="bar"><span style={{ width: `${Math.round((t.bought[k] / (t.n || 1)) * 100)}%`, background: "var(--purple-500)" }} /></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </section>
     </>
   );
 }

@@ -4,7 +4,7 @@
 import { AIRPORT_ALIASES, AIRPORTS } from "./airports";
 import { CITIES, cityOf, nearestCity } from "./cities";
 import type { Product } from "./commission";
-import type { Leg } from "./types";
+import type { DealDetails, Leg } from "./types";
 
 const API = "https://api.hubapi.com";
 
@@ -15,6 +15,10 @@ export type HubspotConfig = {
   // Negócio de agência parceira = este campo com este valor + empresa (agência) associada ao negócio
   origemProp: string;
   origemValue: string;
+  // Etapas "antes da compra" (em negociação)
+  openStages: string[];
+  // Campo do contato com as observações para o parceiro
+  obsProp: string;
 };
 
 export function hubspotConfig(env: Record<string, string | undefined> = process.env): HubspotConfig | null {
@@ -27,6 +31,9 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
     titularLabel: env.HUBSPOT_TITULAR_LABEL ?? "Titular",
     origemProp: env.HUBSPOT_ORIGEM_PROP ?? "origem_do_negocio",
     origemValue: env.HUBSPOT_ORIGEM_VALUE ?? "Afiliado",
+    openStages: (env.HUBSPOT_OPEN_STAGES ?? "appointmentscheduled,qualifiedtobuy,presentationscheduled,135850329,contractsent,135525685")
+      .split(",").map((s) => s.trim()).filter(Boolean),
+    obsProp: env.HUBSPOT_PROP_OBS_PARCEIRO ?? "observacoes_para_parceiro",
   };
 }
 
@@ -35,16 +42,34 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
 export const FIELDS = {
   servico: "servico", // Serviço: o que está sendo comercializado
   amount: "amount", // Valor do negócio
+  // Origem, destino, data, hora de saída, hora de chegada e companhia de cada trecho aéreo
   trechos: [
-    { dest: "aeroporto_de_partida", date: "data_da_volta_" }, // Destino/Data - Trecho 1
-    { dest: "aeroporto_de_chegada___trecho_2", date: "data_de_chegada___trecho_2" }, // Trecho 2
-    { dest: "destino___trecho_3", date: "data_da_ida_" }, // Trecho 3
-    { dest: "destino___trecho_4", date: "data_da_partida___trecho_2" }, // Trecho 4
-    { dest: "destino___trecho_5", date: "data___trecho_5" }, // Trecho 5
-    { dest: "destino___trecho_6", date: "data___trecho_6" }, // Trecho 6
+    { from: "aeroporto_de_destino", dest: "aeroporto_de_partida", date: "data_da_volta_", dep: "hora_descolagem_ida", arr: "hora_chegada_volta", airline: "companhia_aerea_ida" },
+    { from: "aeroporto_de_partida___trecho_2", dest: "aeroporto_de_chegada___trecho_2", date: "data_de_chegada___trecho_2", dep: "hora_pouso_ida", arr: "hora_decolagem_volta", airline: "companhia_aerea_volta" },
+    { from: "origem___trecho_3", dest: "destino___trecho_3", date: "data_da_ida_", dep: "hora_saida___trecho_3", arr: "hora_chegada___trecho_3", airline: "companhia_aerea___trecho_3" },
+    { from: "origem___trecho_4", dest: "destino___trecho_4", date: "data_da_partida___trecho_2", dep: "hora_saida___trecho_4", arr: "hora_chegada___trecho_4", airline: "companhia_aerea___trecho_4" },
+    { from: "origem___trecho_5", dest: "destino___trecho_5", date: "data___trecho_5", dep: "hora_saida___trecho_5", arr: "hora_chegada___trecho_5", airline: "companhia_aerea___trecho_5" },
+    { from: "origem___trecho_6", dest: "destino___trecho_6", date: "data___trecho_6", dep: "hora_saida___trecho_6", arr: "hora_chegada___trecho_6", airline: "companhia_aerea___trecho_6" },
   ],
-  hotel: { city: "cidade__hotel_", start: "data_de_checkin", end: "data_de_checkout" },
-  seguro: { dest: "destino__seguro_", start: "data_de_inicio_da_viagem", end: "data_de_termino_da_viagem__seguro_" },
+  hotel: {
+    city: "cidade__hotel_",
+    start: "data_de_checkin",
+    end: "data_de_checkout",
+    name: "fornecedor__hotel_",
+    checkinTime: "hora_de_checkin_hospedpacsalavip",
+    checkoutTime: "hora_de_checkout_hospedpacsalavip",
+    room: "configuracao_dos_quartos",
+    category: "categoria_de_hospedagem",
+    board: "cafe_da_manha__hotel_",
+  },
+  seguro: {
+    dest: "destino__seguro_",
+    start: "data_de_inicio_da_viagem",
+    end: "data_de_termino_da_viagem__seguro_",
+    plan: "nome_do_plano__seguro_",
+    type: "tipo_de_seguro__hero_",
+    coverage: "valor_da_cobertura__seguro_",
+  },
 } as const;
 
 // Valor do campo "Serviço" → produto comissionado. Outros serviços não geram comissão.
@@ -62,7 +87,7 @@ export function dealProperties(cfg: HubspotConfig): string[] {
     cfg.origemProp,
     FIELDS.servico,
     FIELDS.amount,
-    ...FIELDS.trechos.flatMap((t) => [t.dest, t.date]),
+    ...FIELDS.trechos.flatMap((t) => Object.values(t)),
     ...Object.values(FIELDS.hotel),
     ...Object.values(FIELDS.seguro),
   ];
@@ -115,7 +140,87 @@ function textPlace(text: string | null | undefined): Omit<Leg, "date"> | null {
   return c ? { city, lat: c.lat, lng: c.lng } : { city };
 }
 
-export type Trip = { product: Product; value: number; legs: Leg[]; end: string };
+// Aeroporto para exibir: "BKK · Bangkok".
+export function airportShort(value: string | null | undefined): string {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  const code = AIRPORT_ALIASES[v] ?? v.match(/^([A-Z0-9]{3})\s*[–-]/)?.[1];
+  if (!code) return v;
+  const city = AIRPORTS[code]?.[0] ?? v.replace(/^[A-Z0-9]{3}\s*[–-]\s*/, "").split(",")[0].trim();
+  return city ? `${code} · ${city}` : code;
+}
+
+// Hora do HubSpot (texto "10:30", ISO ou timestamp) → "HH:MM" no horário de Brasília.
+export function toTime(v: string | null | undefined): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (/^\d{1,2}:\d{2}/.test(s)) return s.slice(0, 5);
+  const d = /^\d{10,}$/.test(s) ? new Date(Number(s)) : new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+const txt = (v: string | null | undefined) => String(v ?? "").trim();
+
+// Detalhes do produto para o modal (sem código de reserva: esse fica só no HubSpot).
+export function readDetails(p: Record<string, string | null | undefined>, product: Product): DealDetails {
+  if (product === "voo") {
+    const segments = FIELDS.trechos
+      .map((t) => ({
+        from: airportShort(p[t.from]),
+        to: airportShort(p[t.dest]),
+        date: toIsoDate(p[t.date]) ?? "",
+        dep: toTime(p[t.dep]),
+        arr: toTime(p[t.arr]),
+        airline: txt(p[t.airline]),
+      }))
+      .filter((x) => x.to && x.date)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { voo: { segments } };
+  }
+  if (product === "hotel") {
+    const h = FIELDS.hotel;
+    return {
+      hotel: {
+        name: txt(p[h.name]),
+        city: txt(p[h.city]),
+        checkin: toIsoDate(p[h.start]) ?? "",
+        checkout: toIsoDate(p[h.end]) ?? "",
+        checkinTime: toTime(p[h.checkinTime]),
+        checkoutTime: toTime(p[h.checkoutTime]),
+        room: [txt(p[h.category]), txt(p[h.room])].filter(Boolean).join(" · "),
+        board: txt(p[h.board]),
+      },
+    };
+  }
+  const g = FIELDS.seguro;
+  return {
+    seguro: {
+      plan: txt(p[g.plan]),
+      type: txt(p[g.type]),
+      destination: txt(p[g.dest]),
+      start: toIsoDate(p[g.start]) ?? "",
+      end: toIsoDate(p[g.end]) ?? "",
+      coverage: txt(p[g.coverage]),
+    },
+  };
+}
+
+export type Trip = { product: Product; value: number; legs: Leg[]; end: string; details: DealDetails };
+
+// Só o roteiro, para negócios ainda em negociação (o serviço e o valor podem não estar preenchidos).
+export function readLegsAny(p: Record<string, string | null | undefined>): { legs: Leg[]; end: string } | null {
+  const tries: Record<string, string | null | undefined>[] = [
+    { ...p, [FIELDS.servico]: "Passagem Aérea", [FIELDS.amount]: "1" },
+    { ...p, [FIELDS.servico]: "Hospedagem", [FIELDS.amount]: "1" },
+    { ...p, [FIELDS.servico]: "Seguro Viagem", [FIELDS.amount]: "1" },
+  ];
+  for (const t of tries) {
+    const r = readTrip(t);
+    if (!("skip" in r)) return { legs: r.legs, end: r.end };
+  }
+  return null;
+}
 
 // Lê produto, valor e roteiro de um negócio. Devolve o motivo quando não dá para usar.
 export function readTrip(p: Record<string, string | null | undefined>): Trip | { skip: string } {
@@ -142,7 +247,7 @@ export function readTrip(p: Record<string, string | null | undefined>): Trip | {
   }
   legs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (!legs.length) return { skip: "sem destino e data (trechos, check-in ou vigência)" };
-  return { product, value, legs, end: end ?? legs[legs.length - 1].date };
+  return { product, value, legs, end: end ?? legs[legs.length - 1].date, details: readDetails(p, product) };
 }
 
 export function money(v: string | number | null | undefined): number {
@@ -257,13 +362,79 @@ export function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
 // Todos os negócios ganhos com viagem entre from e to (1º trecho aéreo, check-in ou início do seguro),
 // para encontrar os que não foram sinalizados. Datas "AAAA-MM-DD".
 export function searchWonDealsInWindow(cfg: HubspotConfig, from: string, to: string): Promise<HsDeal[]> {
+  return searchWindow(cfg, cfg.wonStages, from, to);
+}
+
+function searchWindow(cfg: HubspotConfig, stages: string[], from: string, to: string): Promise<HsDeal[]> {
   const ms = (iso: string) => String(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)));
-  const stage: Filter = { propertyName: "dealstage", operator: "IN", values: cfg.wonStages };
+  const stage: Filter = { propertyName: "dealstage", operator: "IN", values: stages };
   const dates = [FIELDS.trechos[0].date, FIELDS.hotel.start, FIELDS.seguro.start];
   return searchDeals(
     cfg,
     dates.map((prop) => ({ filters: [stage, { propertyName: prop, operator: "BETWEEN", value: ms(from), highValue: ms(to) }] })),
   );
+}
+
+// Negócios ainda em negociação (etapas antes da compra) com viagem entre from e to.
+export function searchOpenDealsInWindow(cfg: HubspotConfig, from: string, to: string): Promise<HsDeal[]> {
+  return searchWindow(cfg, cfg.openStages, from, to);
+}
+
+// Variações de telefone como costumam estar gravadas no HubSpot (+5531999999999, 5531..., 31...).
+export function phoneVariants(phone: string | null | undefined): string[] {
+  const d = String(phone ?? "").replace(/\D/g, "");
+  if (d.length < 10) return [];
+  const local = d.startsWith("55") && d.length >= 12 ? d.slice(2) : d;
+  return [...new Set([`+55${local}`, `55${local}`, local, `+${d}`, d])];
+}
+
+export type HsPerson = { id: string; email: string; phones: string[]; name: string; obs: string };
+
+// Procura contatos por e-mail e por telefone (para ligar os clientes cadastrados aos contatos do HubSpot).
+export async function findContacts(cfg: HubspotConfig, emails: string[], phones: string[]): Promise<HsPerson[]> {
+  const props = ["firstname", "lastname", "email", "phone", "mobilephone", "hs_whatsapp_phone_number", cfg.obsProp];
+  const found = new Map<string, HsPerson>();
+  const run = async (filterGroups: { filters: Filter[] }[]) => {
+    let after: string | undefined;
+    do {
+      const r = await call<{ results: { id: string; properties: Record<string, string | null> }[]; paging?: { next?: { after: string } } }>(
+        cfg,
+        "/crm/v3/objects/contacts/search",
+        { filterGroups, properties: props, limit: 100, after },
+      );
+      for (const c of r.results) {
+        const p = c.properties;
+        found.set(c.id, {
+          id: c.id,
+          email: String(p.email ?? "").trim().toLowerCase(),
+          phones: [p.phone, p.mobilephone, p.hs_whatsapp_phone_number].map((x) => String(x ?? "").trim()).filter(Boolean),
+          name: contactName(p),
+          obs: String(p[cfg.obsProp] ?? "").trim(),
+        });
+      }
+      after = r.paging?.next?.after;
+    } while (after);
+  };
+  for (const part of chunk([...new Set(emails.filter(Boolean))], 100))
+    await run([{ filters: [{ propertyName: "email", operator: "IN", values: part }] }]);
+  const variants = [...new Set(phones.flatMap(phoneVariants))];
+  for (const part of chunk(variants, 100))
+    await run(["phone", "mobilephone", "hs_whatsapp_phone_number"].map((prop) => ({ filters: [{ propertyName: prop, operator: "IN", values: part }] })));
+  return [...found.values()];
+}
+
+// Observações de contatos já conhecidos (pelo ID).
+export async function readContactObs(cfg: HubspotConfig, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const part of chunk([...new Set(ids)], 100)) {
+    const r = await call<{ results: { id: string; properties: Record<string, string | null> }[] }>(
+      cfg,
+      "/crm/v3/objects/contacts/batch/read",
+      { properties: [cfg.obsProp], inputs: part.map((id) => ({ id })) },
+    );
+    for (const c of r.results) out.set(c.id, String(c.properties[cfg.obsProp] ?? "").trim());
+  }
+  return out;
 }
 
 // Empresas (agências) associadas a cada negócio, com o nome.

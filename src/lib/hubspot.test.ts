@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
+import { airportShort, phoneVariants, readDetails, readLegsAny, toTime } from "./hubspot";
 import { airportPlace, hubspotConfig, matchPartner, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
-import { mapDeal, matchesSomeExpedition, planPassengers } from "./sync";
+import { clientHubspotStatus, linkContact, mapDeal, matchesSomeExpedition, planPassengers, type StatusDeal } from "./sync";
 import type { Expedition } from "./types";
 
 const a = (contactId: string, order: number, labels: string[] = []): Association => ({ contactId, order, labels });
@@ -170,7 +171,7 @@ describe("conversões do negócio", () => {
 });
 
 describe("negócios não sinalizados", () => {
-  const bkk: Expedition = { id: "e1", partner_id: "pJT", name: "Tailândia", city: "Bangkok", start_date: "2026-12-01", days: 15, created_at: "" };
+  const bkk: Expedition = { id: "e1", partner_id: "pJT", name: "Tailândia", city: "Bangkok", start_date: "2026-12-01", days: 15, arrival_airport: null, departure_airport: null, created_at: "" };
   const lisboa: Expedition = { ...bkk, id: "e2", partner_id: "pX", city: "Lisboa" };
   const ids = new Map([["JT Viajar e Correr", "pJT"]]);
 
@@ -206,5 +207,65 @@ describe("busca por janela de datas", () => {
     ]);
     expect(body.filterGroups[0].filters[1]).toMatchObject({ operator: "BETWEEN", value: String(Date.UTC(2026, 10, 1)), highValue: String(Date.UTC(2026, 11, 18)) });
     expect(body.filterGroups[0].filters[0]).toMatchObject({ propertyName: "dealstage", values: ["135525686"] });
+  });
+});
+
+describe("detalhes do produto para o modal", () => {
+  it("voo: trechos com origem, destino, horários e companhia, em ordem de data", () => {
+    const det = readDetails(
+      {
+        ...aereo,
+        aeroporto_de_destino: "CNF – Belo Horizonte, Brasil – Tancredo Neves,",
+        hora_descolagem_ida: "22:10",
+        hora_chegada_volta: "06:05",
+        companhia_aerea_ida: "Emirates",
+      },
+      "voo",
+    );
+    expect(det.voo?.segments[0]).toEqual({ from: "CNF · Belo Horizonte", to: "DXB · Dubai", date: "2026-11-27", dep: "22:10", arr: "06:05", airline: "Emirates" });
+    expect(det.voo?.segments.map((s) => s.date)).toEqual(["2026-11-27", "2026-11-28", "2026-12-16", "2026-12-19"]);
+  });
+  it("hospedagem e seguro", () => {
+    expect(readDetails({ fornecedor__hotel_: "Hotel X", cidade__hotel_: "Bangkok", data_de_checkin: "2026-12-01" }, "hotel").hotel).toMatchObject({ name: "Hotel X", city: "Bangkok", checkin: "2026-12-01" });
+    expect(readDetails({ nome_do_plano__seguro_: "GTA 60", data_de_inicio_da_viagem: "2026-11-27" }, "seguro").seguro).toMatchObject({ plan: "GTA 60", start: "2026-11-27" });
+  });
+  it("aeroporto curto e horários", () => {
+    expect(airportShort("BKK – Bangkok, Thailand – Bangkok Intl Airport,")).toBe("BKK · Bangkok");
+    expect(airportShort("")).toBe("");
+    expect(toTime("10:30:00")).toBe("10:30");
+    expect(toTime("")).toBe("");
+  });
+});
+
+describe("etapa do cliente pelo HubSpot", () => {
+  const exp: Expedition = { id: "e1", partner_id: "p", name: "Tailândia", city: "Tailândia", start_date: "2026-12-01", days: 15, arrival_airport: "BKK", departure_airport: null, created_at: "" };
+  const legs = [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }];
+  const baroni = { name: "Baroni Henrique de Paula Frontzek", email: "", phone: "+55 (31) 99327-2968", hubspot_contact_id: null };
+  const person = { contactId: "242743641764", name: "Baroni Henrique de Paula Frontzek", email: "baroni@x.com", phone: "+5531993272968" };
+  const d = (id: string, kind: StatusDeal["kind"], over: Partial<StatusDeal> = {}): StatusDeal => ({ id, kind, legs, end_date: "2026-12-16", people: [person], ...over });
+
+  it("negócio ganho compatível → compra concluída (prevalece sobre o em aberto)", () => {
+    expect(clientHubspotStatus(baroni, exp, [d("1", "open"), d("2", "won")])).toEqual({ status: "fechado", dealId: "2" });
+  });
+  it("só em aberto → em negociação", () => {
+    expect(clientHubspotStatus(baroni, exp, [d("1", "open")])).toEqual({ status: "negociacao", dealId: "1" });
+  });
+  it("negócio de outro destino ou de outra pessoa não conta", () => {
+    const paris = [{ city: "Paris", date: "2026-08-01", lat: 49, lng: 2.5 }];
+    expect(clientHubspotStatus(baroni, exp, [d("1", "won", { legs: paris, end_date: "2026-08-10" })]).status).toBeNull();
+    expect(clientHubspotStatus(baroni, exp, [d("1", "won", { people: [{ ...person, contactId: "9", name: "Outra Pessoa", phone: "" }] })]).status).toBeNull();
+  });
+  it("liga o cliente ao contato por e-mail ou, sem e-mail, por telefone", () => {
+    const people = [{ id: "7", email: "ana@x.com", phones: [], name: "Ana", obs: "" }, { id: "8", email: "", phones: ["+5531993272968"], name: "Baroni", obs: "Prefere janela" }];
+    expect(linkContact({ ...baroni, email: "ANA@x.com" }, people)?.id).toBe("7");
+    expect(linkContact(baroni, people)?.id).toBe("8");
+    expect(linkContact({ ...baroni, phone: "" }, people)).toBeUndefined();
+  });
+  it("variações de telefone para a busca", () => {
+    expect(phoneVariants("+55 (31) 99327-2968")).toEqual(expect.arrayContaining(["+5531993272968", "31993272968"]));
+    expect(phoneVariants("123")).toEqual([]);
+  });
+  it("negócio em aberto sem serviço/valor: o roteiro ainda é lido", () => {
+    expect(readLegsAny({ aeroporto_de_partida: "BKK – Bangkok, Thailand – Bangkok Intl Airport,", data_da_volta_: "2026-11-30" })?.legs[0].city).toBe("Bangkok");
   });
 });

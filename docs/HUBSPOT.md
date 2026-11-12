@@ -65,6 +65,25 @@ e da base OpenFlights). Aeroporto a até 60 km de uma cidade da lista de destino
 Limitação: no seguro e na hospedagem, o destino é texto livre. Se estiver escrito como país ("Tailândia"),
 não casa com a cidade da expedição.
 
+## Etapa do cliente e observação
+
+A cada sincronização, cada cliente cadastrado é ligado ao contato do HubSpot (por e-mail; sem e-mail, por
+telefone, buscando em Telefone, Celular e WhatsApp) e recebe:
+
+- **Etapa**: negócio **ganho** compatível com a expedição (destino e data) em que o cliente é passageiro →
+  "Compra concluída"; negócio **em aberto** (`HUBSPOT_OPEN_STAGES`, padrão: todas as etapas antes de
+  "Emissão Realizada", menos "Negócio perdido") → "Em negociação"; nenhum → "Não contactado". A Vay pode
+  marcar à mão "Não contactar" ou "Comprou em outro lugar"; compra concluída sempre prevalece.
+- **Observação**: o campo do contato **"Observações para parceiro"** (`HUBSPOT_PROP_OBS_PARCEIRO`, padrão
+  `observacoes_para_parceiro`). **Pendente no HubSpot:** criar esse campo (texto de várias linhas) no Contato.
+  O parceiro vê o que estiver escrito ali.
+
+## Detalhes no modal (voo, hospedagem, seguro)
+
+Guardados em `deals.details` na sincronização: trechos (origem, destino, data, horários, companhia), hotel
+(nome, cidade, check-in/out, quartos, alimentação) e seguro (plano, tipo, destino, vigência, cobertura).
+O código de reserva não é copiado (fica só no HubSpot).
+
 ## Passageiros
 
 Contatos associados ao negócio; o rótulo de associação "Titular" (`HUBSPOT_TITULAR_LABEL`) marca o titular.

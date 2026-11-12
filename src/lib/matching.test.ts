@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Ledger } from "./ledger";
+import { Ledger, shownStage } from "./ledger";
 import { dealNo, resolveDeals, samePerson } from "./matching";
 import type { Client, Deal, Expedition, Partner, Passenger } from "./types";
 
 // ---------------------------------------------------------------- Fixtures
 
 const partner: Partner = { id: "pA", name: "Horizonte Eventos", afiliado: "Horizonte Eventos", contact_email: null, created_at: "" };
-const madrid: Expedition = { id: "eMad", partner_id: "pA", name: "Congresso de Cardiologia", city: "Madrid", start_date: "2026-11-13", days: 6, created_at: "" };
+const madrid: Expedition = { id: "eMad", partner_id: "pA", name: "Congresso de Cardiologia", city: "Madrid", start_date: "2026-11-13", days: 6, arrival_airport: null, departure_airport: null, created_at: "" };
 
 let seq = 1;
 function pax(name: string, opts: Partial<Passenger> = {}): Passenger {
@@ -25,6 +25,7 @@ function deal(over: Partial<Deal> & { passengers?: Passenger[] } = {}): Deal {
     signaled: true,
     hs_origem: "Afiliado",
     hs_agency: "Horizonte Eventos",
+    details: {},
     afiliado: "Horizonte Eventos",
     closed_on: "2026-09-01",
     legs: [{ city: "Madrid", date: "2026-11-12" }],
@@ -49,9 +50,12 @@ function client(name: string, created_at: string, exp = madrid): Client {
     name,
     email: `${name.toLowerCase()}@email.com`,
     phone: "",
-    stage: "novo",
+    stage: "auto",
     hubspot_status: null,
     hubspot_contact_id: null,
+    hs_status: null,
+    hs_deal_id: null,
+    partner_note: "",
     last_follow_up: null,
     note: "",
     created_at,
@@ -314,6 +318,46 @@ describe("negócios não sinalizados no HubSpot", () => {
     const l = new Ledger([naoSinalizado({ reviewed: true })], [partner], [madrid], [ana]);
     expect(l.pendingFor(madrid)).toBe(0);
     expect(l.unsignaledFor(madrid).length).toBe(1);
+  });
+});
+
+describe("expedição com destino livre e aeroporto de chegada", () => {
+  const tailandia: Expedition = { ...madrid, id: "eTh", city: "Tailândia", arrival_airport: "BKK", start_date: "2026-12-01", days: 15 };
+  const ana = client("Ana", "2026-10-01");
+
+  it("trecho em Bangkok (aeroporto BKK) conta como o destino, mesmo com o destino escrito como país", () => {
+    const d = deal({ legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16" });
+    const [r] = resolveDeals([d], [partner], [tailandia], [ana]);
+    expect(r.exp?.id).toBe("eTh");
+    expect(r.reason).toContain("Tailândia está no roteiro");
+  });
+
+  it("Phuket fica a ~690 km: vincula por aproximação", () => {
+    const d = deal({ legs: [{ city: "Phuket", date: "2026-11-30", lat: 8.11, lng: 98.32 }], end_date: "2026-12-16" });
+    const [r] = resolveDeals([d], [partner], [tailandia], [ana]);
+    expect(r.exp?.id).toBe("eTh");
+    expect(flagKeys(r)).toContain("aprox");
+  });
+
+  it("sem aeroporto e com destino fora da lista de cidades: não há como vincular", () => {
+    const semAeroporto = { ...tailandia, arrival_airport: null };
+    const d = deal({ legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16" });
+    expect(resolveDeals([d], [partner], [semAeroporto], [ana])[0].exp).toBeNull();
+  });
+});
+
+describe("etapa exibida", () => {
+  it("compra concluída no HubSpot prevalece sobre tudo", () => {
+    expect(shownStage({ stage: "outro_lugar", hs_status: null }, true)).toBe("fechado");
+    expect(shownStage({ stage: "nao_contactar", hs_status: "fechado" }, false)).toBe("fechado");
+  });
+  it("marcação manual da Vay prevalece sobre em negociação", () => {
+    expect(shownStage({ stage: "nao_contactar", hs_status: "negociacao" }, false)).toBe("nao_contactar");
+    expect(shownStage({ stage: "outro_lugar", hs_status: null }, false)).toBe("outro_lugar");
+  });
+  it("negócio em aberto → em negociação; nada → não contactado", () => {
+    expect(shownStage({ stage: "auto", hs_status: "negociacao" }, false)).toBe("negociacao");
+    expect(shownStage({ stage: "auto", hs_status: null }, false)).toBe("novo");
   });
 });
 

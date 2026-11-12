@@ -31,6 +31,14 @@ export type ClientLine = {
   unregistered: { passenger: Passenger; deal: Resolved }[];
 };
 
+// Etapa exibida (SPEC v1.2): compra concluída no HubSpot > marcação manual da Vay > em negociação > não contactado.
+export function shownStage(c: Pick<Client, "stage" | "hs_status">, hasLinkedDeal: boolean): StageId {
+  if (hasLinkedDeal || c.hs_status === "fechado") return "fechado";
+  if (c.stage === "nao_contactar" || c.stage === "outro_lugar") return c.stage;
+  if (c.hs_status === "negociacao") return "negociacao";
+  return "novo";
+}
+
 export class Ledger {
   readonly resolved: Resolved[];
   readonly paid: Resolved[];
@@ -53,9 +61,8 @@ export class Ledger {
     );
   }
 
-  // Um negócio fechado no HubSpot prevalece sobre a etapa registrada à mão.
   shownStage(c: Client): StageId {
-    return this.clientDeals(c).length ? "fechado" : c.stage;
+    return shownStage(c, this.clientDeals(c).length > 0);
   }
 
   clientLine(c: Client): ClientLine {
@@ -66,7 +73,7 @@ export class Ledger {
     for (const r of primary) for (const k of PRODUCTS) values[k] += Number(r.deal[k]) || 0;
     return {
       client: c,
-      stage: deals.length ? "fechado" : c.stage,
+      stage: shownStage(c, deals.length > 0),
       deals,
       primary,
       included,
@@ -93,7 +100,7 @@ export class Ledger {
     };
     for (const c of cl) {
       const cd = this.clientDeals(c);
-      const st = cd.length ? "fechado" : c.stage;
+      const st = shownStage(c, cd.length > 0);
       t.stages[st] = (t.stages[st] ?? 0) + 1;
       if (st === "fechado") t.closed++;
       for (const k of PRODUCTS) if (cd.some((r) => Number(r.deal[k]) > 0)) t.bought[k]++;

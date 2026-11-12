@@ -1,47 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { expEnd, expStatus, PRODUCTS, stageOf, type Tone } from "@/lib/commission";
+import { expEnd, expStatus, PRODUCTS, stageOf, type Product, type Tone } from "@/lib/commission";
 import type { ClientLine } from "@/lib/ledger";
 import { dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
+import { airportLabel } from "@/components/AirportOptions";
 import { ClientTools, DealActions, FollowUpForm, NewDealForm, ReviewToggle } from "./forms";
+import { ProductCell, type ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
 
-// Células Voo / Hospedagem / Seguro de uma linha principal (valores somados por negócio)
-function ValueCells({ values, hasDeal }: { values: Record<string, number>; hasDeal: boolean }) {
-  return (
-    <>
-      {PRODUCTS.map((k) => {
-        const v = values[k] ?? 0;
-        return v > 0 ? (
-          <td key={k}><Badge tone="success">Comprado</Badge><div className="sub">{brl(v)}</div></td>
-        ) : (
-          <td key={k}><Badge tone="neutral">{hasDeal ? "Não comprou" : "Sem compra"}</Badge><div className="sub">—</div></td>
-        );
-      })}
-    </>
-  );
-}
-
-// Linha de quem está incluído no negócio de outro passageiro: sem valores, ganho "—".
-function IncludedCells({ deals }: { deals: Resolved[] }) {
-  return (
-    <td colSpan={3} className="muted">
-      Compra concluída · incluída no negócio {deals.map((r) => dealNo(r.deal)).join(", ")}
-    </td>
-  );
-}
-
 function DealNos({ deals }: { deals: Resolved[] }) {
   return <td>{deals.length ? deals.map((r) => dealNo(r.deal)).join(", ") : "—"}</td>;
-}
-
-function moneyOf(r: Resolved) {
-  return { voo: Number(r.deal.voo) || 0, hotel: Number(r.deal.hotel) || 0, seguro: Number(r.deal.seguro) || 0 };
 }
 
 export default async function ExpeditionPage({
@@ -65,6 +38,26 @@ export default async function ExpeditionPage({
   const outsideCom = outside.reduce((a, r) => a + r.com.total, 0);
   const editing = isVay && sp.cliente ? t.clients.find((c) => c.id === sp.cliente) : undefined;
   const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
+  const notesOf = (dealId: string) => world.notes.filter((n) => n.deal_id === dealId);
+  const pd = (r: Resolved): ProductDeal => ({
+    id: r.deal.id,
+    no: dealNo(r.deal),
+    value: null,
+    details: r.deal.details ?? {},
+    notes: notesOf(r.deal.id),
+  });
+  // Células de produto: valor só nos negócios da linha principal; nas outras, "Incluído no #…".
+  const cells = (primary: Resolved[], included: Resolved[], hasDeal: boolean) =>
+    PRODUCTS.map((k: Product) => (
+      <ProductCell
+        key={k}
+        product={k}
+        primary={primary.filter((r) => Number(r.deal[k]) > 0).map((r) => ({ ...pd(r), value: Number(r.deal[k]) }))}
+        included={included.filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r))}
+        hasDeal={hasDeal}
+        canEdit={isVay}
+      />
+    ));
 
   const expDeals = ledger.resolved
     .filter((r) => r.deal.signaled !== false)
@@ -96,17 +89,21 @@ export default async function ExpeditionPage({
           <div className="meta">
             <span>Destino: <strong>{cityLabel(exp.city)}</strong></span>
             <span>Início: <strong>{fmtDate(exp.start_date)}</strong></span>
-            <span>Duração: <strong>{exp.days} dias</strong></span>
-            <span>Término: <strong>{fmtDate(expEnd(exp))}</strong></span>
+            <span>Fim: <strong>{fmtDate(expEnd(exp))}</strong></span>
+            {exp.arrival_airport ? <span>Chegada: <strong>{airportLabel(exp.arrival_airport)}</strong></span> : null}
+            {exp.departure_airport ? <span>Saída: <strong>{airportLabel(exp.departure_airport)}</strong></span> : null}
           </div>
         </div>
       </div>
 
       <div className="grid-kpi">
+        <Kpi
+          label="Clientes cadastrados"
+          value={String(t.n)}
+          sub={<span className="highlight">{plural(t.closed, "compra concluída", "compras concluídas")}</span>}
+        />
         <Kpi accent label={isVay ? "Comissão do parceiro" : "Seus ganhos nesta expedição"} value={brl(t.total)} sub={`Voos ${brl(t.voo)} · Hosp. ${brl(t.hotel)} · Seg. ${brl(t.seguro)}`} />
-        <Kpi label="Volume vendido" value={brl(t.sold)} sub={plural(t.deals, "negócio fechado", "negócios fechados")} />
-        <Kpi label="Clientes cadastrados" value={String(t.n)} sub={`${t.closed} com compra concluída`} />
-        <Kpi label="Em negociação" value={String((t.stages.contato ?? 0) + (t.stages.proposta ?? 0))} sub={`${t.stages.novo ?? 0} aguardando contato`} />
+        <Kpi label="Em negociação" value={String(t.stages.negociacao ?? 0)} sub={`${t.stages.novo ?? 0} não contactados`} />
       </div>
 
       {!isVay ? <ClientTools expId={exp.id} startOpen={!!sp.novo} /> : null}
@@ -120,6 +117,7 @@ export default async function ExpeditionPage({
             name: editing.name,
             contact: [editing.email, editing.phone].filter(Boolean).join(" · "),
             stage: editing.stage,
+            shown: stageOf(ledger.shownStage(editing)).label,
             note: editing.note,
           }}
         />
@@ -147,7 +145,7 @@ export default async function ExpeditionPage({
                 <th>Hospedagem</th>
                 <th>Seguro</th>
                 <th className="num">{isVay ? "Comissão" : "Seu ganho"}</th>
-                <th>Último follow-up</th>
+                <th>Observação</th>
                 {isVay ? <th>Ação</th> : null}
               </tr>
             </thead>
@@ -176,18 +174,11 @@ export default async function ExpeditionPage({
                     </td>
                     <td><Badge tone={sg.tone} dot>{sg.label}</Badge></td>
                     <DealNos deals={l.deals} />
-                    {l.primary.length || !l.included.length ? (
-                      <ValueCells values={l.values} hasDeal={l.deals.length > 0} />
-                    ) : (
-                      <IncludedCells deals={l.included} />
-                    )}
+                    {cells(l.primary, l.included, l.deals.length > 0)}
                     <td className="num strong">{l.primary.length ? brl(l.com.total) : l.included.length ? "—" : brl(0)}</td>
                     <td>
-                      {c.last_follow_up ? fmtDate(c.last_follow_up) : "Sem contato"}
-                      {c.note ? <div className="sub" style={{ maxWidth: 260 }}>{c.note}</div> : null}
-                      {l.primary.length && l.included.length ? (
-                        <div className="sub">Também incluído no negócio {l.included.map((r) => dealNo(r.deal)).join(", ")}</div>
-                      ) : null}
+                      {c.partner_note ? <div style={{ maxWidth: 280, whiteSpace: "pre-wrap" }}>{c.partner_note}</div> : <span className="muted">—</span>}
+                      {isVay && c.note ? <div className="sub" style={{ maxWidth: 280 }}>Nota interna: {c.note}</div> : null}
                     </td>
                     {isVay ? (
                       <td><Link href={`/expedicoes/${exp.id}?cliente=${c.id}#follow-up`} className="btn secondary sm">Atualizar</Link></td>
@@ -203,7 +194,7 @@ export default async function ExpeditionPage({
                           </td>
                           <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
                           <DealNos deals={[r]} />
-                          <IncludedCells deals={[r]} />
+                          {cells([], [r], true)}
                           <td className="num">—</td>
                           <td>—</td>
                           <td />
@@ -229,7 +220,7 @@ export default async function ExpeditionPage({
                         </td>
                         <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
                         <DealNos deals={[r]} />
-                        <ValueCells values={moneyOf(r)} hasDeal />
+                        {cells([r], [], true)}
                         <td className="num strong">{brl(r.com.total)}</td>
                         <td>Fechado em {fmtDate(r.deal.closed_on)}<div className="sub">Negócio marcado com o afiliado no HubSpot.</div></td>
                         <td />

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { addMoney, stageOf, ZERO } from "@/lib/commission";
 import { loadWorld, requireVay } from "@/lib/data";
-import { brl, fmtDate, fmtDateTime, plural } from "@/lib/format";
+import { brl, fmtDateTime, plural } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { SyncButton } from "./SyncButton";
 
@@ -27,7 +27,7 @@ export default async function OverviewPage() {
   const expById = new Map(exps.map((e) => [e.id, e]));
 
   const total = ledger.paid.reduce((a, r) => addMoney(a, r.com), ZERO);
-  const pending = clients.filter((c) => ["novo", "contato"].includes(ledger.shownStage(c)));
+  const pending = clients.filter((c) => ["novo", "negociacao"].includes(ledger.shownStage(c)));
   const flagCount = ledger.resolved.filter((r) => r.needsReview).length;
   const pendingExps = exps
     .map((e) => ({ e, n: ledger.pendingFor(e) }))
@@ -57,7 +57,7 @@ export default async function OverviewPage() {
         <Kpi accent label="Volume vendido a afiliados" value={brl(total.sold)} sub={plural(ledger.paid.length, "negócio vinculado", "negócios vinculados") + " a expedições"} />
         <Kpi label="Comissões a repassar" value={brl(total.total)} sub={`Para ${plural(partners.length, "parceiro", "parceiros")}`} />
         <Kpi label="Clientes cadastrados" value={String(clients.length)} sub={`Pelos parceiros, em ${plural(exps.length, "expedição", "expedições")}`} />
-        <Kpi label="Follow-ups pendentes" value={String(pending.length)} sub="Aguardando contato ou em atendimento" />
+        <Kpi label="Follow-ups pendentes" value={String(pending.length)} sub="Não contactados ou em negociação" />
       </div>
 
       {flagCount > 0 ? (
@@ -114,13 +114,13 @@ export default async function OverviewPage() {
         <div className="card-head">
           <div className="ttl">
             <h2 className="section-title">Follow-ups pendentes</h2>
-            <Tip>Clientes cadastrados pelos parceiros, aguardando contato ou em atendimento.</Tip>
+            <Tip>Clientes cadastrados pelos parceiros que ainda não compraram: não contactados ou em negociação no HubSpot.</Tip>
           </div>
         </div>
         <div className="table-wrap">
           <table className="tbl" style={{ minWidth: 860 }}>
             <thead>
-              <tr><th>Cliente</th><th>Expedição</th><th>Etapa</th><th>Último contato</th><th>Ação</th></tr>
+              <tr><th>Cliente</th><th>Expedição</th><th>Etapa</th><th>Observação</th><th>Ação</th></tr>
             </thead>
             <tbody>
               {pending.map((c) => {
@@ -131,7 +131,7 @@ export default async function OverviewPage() {
                     <td><span className="strong">{c.name}</span><div className="sub">{c.phone || c.email}</div></td>
                     <td>{e?.name}<div className="sub">{e ? partnerById.get(e.partner_id)?.name : ""}</div></td>
                     <td><Badge tone={st.tone} dot>{st.label}</Badge></td>
-                    <td>{c.last_follow_up ? fmtDate(c.last_follow_up) : "Sem contato"}</td>
+                    <td>{c.partner_note || <span className="muted">—</span>}</td>
                     <td><Link href={`/expedicoes/${c.expedition_id}?cliente=${c.id}`} className="btn secondary sm">Atualizar</Link></td>
                   </tr>
                 );

@@ -14,12 +14,12 @@ export const PROD_LABEL: Record<Product, string> = {
 
 export type Tone = "neutral" | "bluebell" | "blue" | "purple" | "red" | "yellow" | "success";
 
-export const STAGES: { id: StageId; label: string; tone: Tone; color: string }[] = [
-  { id: "novo", label: "Aguardando contato", tone: "neutral", color: "#CBCCD6" },
-  { id: "contato", label: "Em contato", tone: "bluebell", color: "#ACB4ED" },
-  { id: "proposta", label: "Proposta enviada", tone: "blue", color: "#0078D0" },
+export const STAGES: { id: StageId; label: string; tone: Tone; color: string; manual?: boolean }[] = [
+  { id: "novo", label: "Não contactado", tone: "neutral", color: "#CBCCD6" },
+  { id: "negociacao", label: "Em negociação", tone: "blue", color: "#0078D0" },
   { id: "fechado", label: "Compra concluída", tone: "purple", color: "#473690" },
-  { id: "desistiu", label: "Desistiu", tone: "red", color: "#E88A86" },
+  { id: "nao_contactar", label: "Não contactar", tone: "yellow", color: "#D8BE4A", manual: true },
+  { id: "outro_lugar", label: "Comprou em outro lugar", tone: "red", color: "#E88A86", manual: true },
 ];
 
 export function stageOf(id: string) {

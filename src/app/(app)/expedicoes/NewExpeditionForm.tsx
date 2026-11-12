@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { CITIES } from "@/lib/cities";
+import { AirportOptions } from "@/components/AirportOptions";
 import type { Partner } from "@/lib/types";
 import { createExpedition } from "../actions";
 import { Tip } from "@/components/ui";
@@ -32,18 +32,26 @@ export function NewExpeditionForm({ partners }: { partners?: Partner[] }) {
           </div>
           <div className="field">
             <label htmlFor="ne-city">Destino</label>
-            <select id="ne-city" name="city" className="select" required defaultValue="">
-              <option value="" disabled>Escolha o destino</option>
-              {CITIES.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
-            </select>
+            <input id="ne-city" name="city" className="input" placeholder="Ex.: Tailândia, Bangkok e Phuket" required />
           </div>
           <div className="field">
             <label htmlFor="ne-date">Data de início</label>
             <input id="ne-date" name="start_date" type="date" className="input" required />
           </div>
           <div className="field">
-            <label htmlFor="ne-days">Duração (dias)</label>
-            <input id="ne-days" name="days" type="number" min={1} max={365} className="input" required />
+            <label htmlFor="ne-end">Data de fim</label>
+            <input id="ne-end" name="end_date" type="date" className="input" required />
+          </div>
+          <div className="field">
+            <div className="ttl">
+              <label htmlFor="ne-arr">Aeroporto preferencial de chegada</label>
+              <Tip>É por ele que a Vay Agora encontra as compras dos seus clientes para esta expedição. Digite o código ou a cidade e escolha na lista.</Tip>
+            </div>
+            <input id="ne-arr" name="arrival_airport" className="input" list="aeroportos" placeholder="Ex.: BKK · Bangkok" autoComplete="off" required />
+          </div>
+          <div className="field">
+            <label htmlFor="ne-dep">Aeroporto preferencial de saída</label>
+            <input id="ne-dep" name="departure_airport" className="input" list="aeroportos" placeholder="Ex.: GRU · São Paulo (opcional)" autoComplete="off" />
           </div>
         </div>
         {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
@@ -51,6 +59,7 @@ export function NewExpeditionForm({ partners }: { partners?: Partner[] }) {
           <button type="submit" className="btn primary" disabled={pending}>Criar expedição</button>
           <Link href="/expedicoes" className="btn ghost">Cancelar</Link>
         </div>
+        <AirportOptions />
       </form>
     </section>
   );

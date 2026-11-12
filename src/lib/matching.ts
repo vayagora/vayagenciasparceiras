@@ -1,5 +1,6 @@
 // Vínculo negócio → expedição (SPEC §4.4) e correspondência cliente ↔ passageiro (SPEC §3).
 // Qualquer mudança aqui exige teste em matching.test.ts.
+import { AIRPORTS } from "./airports";
 import { cityOf, kmBetween } from "./cities";
 import { dealCom, ZERO, type Money, type Tone } from "./commission";
 import { dayNum, digits, dm, lower } from "./format";
@@ -41,22 +42,34 @@ export function samePerson(a: Person, b: Person): boolean {
 
 type Match = { approx: boolean; score: number; reason: string };
 
+// Até esta distância do destino, o trecho conta como a própria cidade da expedição (ex.: GRU e São Paulo).
+export const EXACT_KM = 60;
+
+// Coordenadas do destino: o aeroporto preferencial de chegada; sem ele, a cidade da lista.
+export function expPlace(exp: Pick<Expedition, "city" | "arrival_airport">): { lat: number; lng: number } | undefined {
+  const ap = exp.arrival_airport ? AIRPORTS[exp.arrival_airport] : undefined;
+  if (ap) return { lat: ap[1], lng: ap[2] };
+  return cityOf(exp.city);
+}
+
 // Afiliado já filtrado antes; aqui avalia data + destino com as tolerâncias.
-export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Expedition, tol: Tolerances = DEFAULT_TOL): Match | null {
+export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedition, "city" | "arrival_airport" | "start_date" | "days">, tol: Tolerances = DEFAULT_TOL): Match | null {
   if (!deal.legs?.length) return null;
   const es = dayNum(exp.start_date);
   const ee = es + Number(exp.days) - 1;
   const ts = dayNum(deal.legs[0].date);
   const te = dayNum(deal.end_date);
   if (te < es - tol.before || ts > ee + tol.after) return null;
-  const ec = cityOf(exp.city);
+  const ec = expPlace(exp);
   if (!ec) return null;
 
   let best: { city: string; km: number } | null = null;
   for (const l of deal.legs) {
     const c = typeof l.lat === "number" && typeof l.lng === "number" ? { lat: l.lat, lng: l.lng } : cityOf(l.city);
     if (!c) continue;
-    const dist = l.city === exp.city ? 0 : Math.round(kmBetween(c, ec));
+    let dist = l.city === exp.city ? 0 : Math.round(kmBetween(c, ec));
+    if (dist <= EXACT_KM) dist = 0; // mesma região do aeroporto de chegada conta como o destino
+    
     if (dist <= tol.radiusKm && (!best || dist < best.km)) best = { city: l.city, km: dist };
   }
   if (!best) return null;

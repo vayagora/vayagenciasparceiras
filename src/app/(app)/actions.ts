@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { AIRPORTS } from "@/lib/airports";
 import { cityOf } from "@/lib/cities";
-import { STAGES } from "@/lib/commission";
 import { parseRows, type ClientRow } from "@/lib/csv";
 import { requireSession, requireVay } from "@/lib/data";
-import { digits, lower, plural, todayIso } from "@/lib/format";
+import { dayNum, digits, lower, plural, todayIso } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
 import type { Leg } from "@/lib/types";
@@ -20,22 +20,44 @@ const isIsoDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 // ---------------------------------------------------------------- Expedições
 
+// "BKK – Bangkok" ou "BKK" → "BKK" (só códigos da tabela de aeroportos).
+function airportCode(v: string): string | null {
+  const code = v.trim().toUpperCase().match(/^([A-Z0-9]{3})\b/)?.[1];
+  return code && AIRPORTS[code] ? code : null;
+}
+
 export async function createExpedition(_: FormState, f: FormData): Promise<FormState> {
   const s = await requireSession();
   const name = str(f, "name");
   const city = str(f, "city");
   const start = str(f, "start_date");
-  const days = Number(str(f, "days"));
+  const end = str(f, "end_date");
+  const arrivalRaw = str(f, "arrival_airport");
+  const departureRaw = str(f, "departure_airport");
   const partnerId = s.isVay ? str(f, "partner_id") : s.partner?.id;
 
-  if (!name || !city || !isIsoDate(start) || !(days > 0) || !partnerId)
-    return { error: "Preencha nome, destino, data de início e duração." };
-  if (!cityOf(city)) return { error: "Escolha um destino da lista." };
+  if (!name || !city || !isIsoDate(start) || !isIsoDate(end) || !arrivalRaw || !partnerId)
+    return { error: "Preencha nome, destino, datas de início e fim e o aeroporto de chegada." };
+  const days = dayNum(end) - dayNum(start) + 1;
+  if (days < 1) return { error: "A data de fim precisa ser igual ou depois da data de início." };
+  const arrival = airportCode(arrivalRaw);
+  if (!arrival) return { error: "Escolha o aeroporto de chegada na lista (ex.: BKK · Bangkok)." };
+  const departure = departureRaw ? airportCode(departureRaw) : null;
+  if (departureRaw && !departure) return { error: "Escolha o aeroporto de saída na lista (ex.: GRU · São Paulo)." };
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("expeditions")
-    .insert({ partner_id: partnerId, name, city, start_date: start, days, created_by: s.profile.id })
+    .insert({
+      partner_id: partnerId,
+      name,
+      city,
+      start_date: start,
+      days,
+      arrival_airport: arrival,
+      departure_airport: departure,
+      created_by: s.profile.id,
+    })
     .select("id")
     .single();
   if (error || !data) return { error: "Não foi possível criar a expedição." };
@@ -69,7 +91,7 @@ async function insertClients(expId: string, rows: ClientRow[]) {
   }
   if (fresh.length) {
     const { error: insErr } = await supabase.from("clients").insert(
-      fresh.map((r) => ({ ...r, expedition_id: expId, stage: "novo", created_by: s.profile.id })),
+      fresh.map((r) => ({ ...r, expedition_id: expId, stage: "auto", created_by: s.profile.id })),
     );
     if (insErr) throw new Error(insErr.message);
   }
@@ -108,19 +130,104 @@ export async function importClients(expId: string, _: FormState, f: FormData): P
   }
 }
 
+// A etapa vem do HubSpot; a Vay só marca "Não contactar" ou "Comprou em outro lugar" (ou volta ao automático).
 export async function saveFollowUp(clientId: string, _: FormState, f: FormData): Promise<FormState> {
   await requireVay();
   const stage = str(f, "stage");
   const note = str(f, "note");
-  if (!STAGES.some((s) => s.id === stage)) return { error: "Etapa inválida." };
+  if (!["auto", "nao_contactar", "outro_lugar"].includes(stage)) return { error: "Etapa inválida." };
   const supabase = await createClient();
   const { error } = await supabase
     .from("clients")
     .update({ stage, note, last_follow_up: todayIso() })
     .eq("id", clientId);
-  if (error) return { error: "Não foi possível salvar o follow-up." };
+  if (error) return { error: "Não foi possível salvar." };
   revalidatePath("/", "layout");
-  return { ok: "Follow-up salvo. O parceiro já vê a atualização." };
+  return { ok: "Salvo. O parceiro já vê a etapa atualizada." };
+}
+
+// ---------------------------------------------------------------- Saldo (extrato)
+
+const whoName = (s: Awaited<ReturnType<typeof requireVay>>) => s.profile.full_name || s.profile.email;
+
+export async function addBalanceEntry(partnerId: string, _: FormState, f: FormData): Promise<FormState> {
+  const s = await requireVay();
+  const kind = str(f, "kind");
+  const title = str(f, "title");
+  const note = str(f, "note");
+  const date = str(f, "entry_date") || todayIso();
+  const v = str(f, "amount").replace(/[R$\s]/g, "");
+  const amount = Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v);
+  if (kind !== "in" && kind !== "out") return { error: "Escolha entrada ou saída." };
+  if (!(amount > 0)) return { error: "Informe um valor maior que zero." };
+  if (!title) return { error: "Informe o motivo." };
+  if (!isIsoDate(date)) return { error: "Data inválida." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("balance_entries").insert({
+    partner_id: partnerId,
+    kind,
+    amount: Math.round(amount * 100) / 100,
+    title,
+    note,
+    entry_date: date,
+    created_by: s.profile.id,
+    created_by_name: whoName(s),
+  });
+  if (error) return { error: "Não foi possível lançar." };
+  revalidatePath("/", "layout");
+  return { ok: kind === "in" ? "Entrada lançada no extrato." : "Saída lançada no extrato." };
+}
+
+export async function deleteBalanceEntry(entryId: string) {
+  await requireVay();
+  const supabase = await createClient();
+  const { error } = await supabase.from("balance_entries").delete().eq("id", entryId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
+}
+
+// ---------------------------------------------------------------- Comentários e arquivos dos produtos
+
+const PRODUCT_IDS = ["voo", "hotel", "seguro"];
+
+// O arquivo já foi enviado ao Storage pelo navegador (bucket "anexos", pasta <deal_id>/<produto>/).
+export async function addDealNote(dealId: string, product: string, body: string, file?: { path: string; name: string }): Promise<FormState> {
+  const s = await requireVay();
+  if (!PRODUCT_IDS.includes(product)) return { error: "Produto inválido." };
+  const text = body.trim();
+  if (!text && !file) return { error: "Escreva um comentário ou escolha um arquivo." };
+  if (file && !file.path.startsWith(`${dealId}/${product}/`)) return { error: "Arquivo inválido." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("deal_notes").insert({
+    deal_id: dealId,
+    product,
+    body: text,
+    file_path: file?.path ?? null,
+    file_name: file?.name ?? null,
+    created_by: s.profile.id,
+    created_by_name: whoName(s),
+  });
+  if (error) return { error: "Não foi possível salvar." };
+  revalidatePath("/", "layout");
+  return { ok: "Adicionado. O parceiro também vê." };
+}
+
+export async function deleteDealNote(noteId: string) {
+  await requireVay();
+  const supabase = await createClient();
+  const { data } = await supabase.from("deal_notes").select("file_path").eq("id", noteId).single();
+  if (data?.file_path) await supabase.storage.from("anexos").remove([data.file_path]);
+  const { error } = await supabase.from("deal_notes").delete().eq("id", noteId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
+}
+
+// Link temporário para baixar um anexo (as regras de acesso do Storage valem para quem pede).
+export async function attachmentUrl(path: string): Promise<string | null> {
+  await requireSession();
+  const supabase = await createClient();
+  const { data } = await supabase.storage.from("anexos").createSignedUrl(path, 60);
+  return data?.signedUrl ?? null;
 }
 
 // ---------------------------------------------------------------- Negócios

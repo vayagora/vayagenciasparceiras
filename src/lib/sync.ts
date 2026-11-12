@@ -3,8 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dealCompanies,
   dealContacts,
+  findContacts,
   matchPartner,
+  readContactObs,
+  readLegsAny,
+  searchOpenDealsInWindow,
   searchWonDealsInWindow,
+  type HsPerson,
   hubspotConfig,
   pickTitular,
   readContacts,
@@ -16,9 +21,9 @@ import {
   type HsDeal,
 } from "./hubspot";
 import { expEnd } from "./commission";
-import { dayNum, isoOf } from "./format";
-import { DEFAULT_TOL, evalDeal } from "./matching";
-import type { Expedition, Leg } from "./types";
+import { dayNum, digits, isoOf } from "./format";
+import { DEFAULT_TOL, evalDeal, sameName, samePerson } from "./matching";
+import type { Client, DealDetails, Expedition, Leg } from "./types";
 
 export type PassengerRow = {
   hubspot_contact_id: string;
@@ -68,6 +73,7 @@ export type DealRow = {
   voo: number;
   hotel: number;
   seguro: number;
+  details: DealDetails;
 };
 
 // Sinalizado: afiliado = agência associada (parceiro). Não sinalizado: afiliado vazio (só a Vay vê),
@@ -98,8 +104,49 @@ export function mapDeal(
       voo: trip.product === "voo" ? trip.value : 0,
       hotel: trip.product === "hotel" ? trip.value : 0,
       seguro: trip.product === "seguro" ? trip.value : 0,
+      details: trip.details,
     },
   };
+}
+
+// ---------------------------------------------------------------- Etapa do cliente pelo HubSpot
+
+export type StatusDeal = {
+  id: string;
+  kind: "won" | "open";
+  legs: Leg[];
+  end_date: string;
+  people: { contactId: string; name: string; email: string; phone: string }[];
+};
+export type StatusClient = Pick<Client, "name" | "email" | "phone" | "hubspot_contact_id">;
+
+// Negócio compatível com a expedição (destino e data) em que o cliente é passageiro:
+// ganho → compra concluída; em aberto → em negociação; nenhum → null (não contactado).
+export function clientHubspotStatus(
+  c: StatusClient,
+  exp: Expedition,
+  deals: StatusDeal[],
+): { status: "fechado" | "negociacao" | null; dealId: string | null } {
+  const mine = deals.filter(
+    (d) =>
+      d.people.some((p) => samePerson(c, { hubspot_contact_id: p.contactId, email: p.email, phone: p.phone }) || sameName(c.name, p.name)) &&
+      !!evalDeal(d, exp),
+  );
+  const won = mine.find((d) => d.kind === "won");
+  if (won) return { status: "fechado", dealId: won.id };
+  const open = mine.find((d) => d.kind === "open");
+  return open ? { status: "negociacao", dealId: open.id } : { status: null, dealId: null };
+}
+
+// Cliente cadastrado ↔ contato do HubSpot: e-mail; sem e-mail, telefone.
+export function linkContact(c: StatusClient, people: HsPerson[]): HsPerson | undefined {
+  const e = c.email.trim().toLowerCase();
+  if (e) {
+    const byEmail = people.find((p) => p.email === e);
+    if (byEmail) return byEmail;
+  }
+  const ph = digits(c.phone);
+  return ph ? people.find((p) => p.phones.some((x) => digits(x) === ph)) : undefined;
 }
 
 // Negócio não sinalizado só é guardado se combinar com alguma expedição (do parceiro da empresa associada, se houver).
@@ -138,10 +185,14 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     // 1) sinalizados (origem Afiliado)  2) qualquer negócio ganho com viagem perto das expedições
     const flagged = await searchWonDeals(cfg);
     let nearby: HsDeal[] = [];
+    let windowFrom = "";
+    let windowTo = "";
     if (exps.length) {
       const starts = exps.map((e) => e.start_date).sort();
       const ends = exps.map((e) => expEnd(e)).sort();
-      nearby = await searchWonDealsInWindow(cfg, isoOf(dayNum(starts[0]) - 30), isoOf(dayNum(ends[ends.length - 1]) + DEFAULT_TOL.after));
+      windowFrom = isoOf(dayNum(starts[0]) - 30);
+      windowTo = isoOf(dayNum(ends[ends.length - 1]) + DEFAULT_TOL.after);
+      nearby = await searchWonDealsInWindow(cfg, windowFrom, windowTo);
     }
     const fromFlagged = new Set(flagged.map((d) => d.id));
     const hs = [...flagged, ...nearby.filter((d) => !fromFlagged.has(d.id))];
@@ -209,6 +260,9 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
       }
       n++;
     }
+    // Etapa e observação de cada cliente cadastrado
+    await syncClients(admin, cfg, exps, hs, assocs, contacts, windowFrom, windowTo);
+
     // Não sinalizados que deixaram de combinar (ou foram corrigidos) saem da lista.
     let cleanup = admin.from("deals").delete().eq("signaled", false).not("hubspot_id", "is", null);
     if (keptUnsignaled.length) cleanup = cleanup.not("hubspot_id", "in", `(${keptUnsignaled.join(",")})`);
@@ -217,5 +271,63 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     return finish({ ok: true, deals: n, skipped, unsignaled: keptUnsignaled.length });
   } catch (e) {
     return finish({ ok: false, deals: 0, skipped: [], error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+// Liga clientes a contatos, traz "Observações para parceiro" e calcula a etapa pelo HubSpot.
+async function syncClients(
+  admin: SupabaseClient,
+  cfg: NonNullable<ReturnType<typeof hubspotConfig>>,
+  exps: Expedition[],
+  won: HsDeal[],
+  wonAssocs: Map<string, Association[]>,
+  wonContacts: Map<string, HsContact>,
+  from: string,
+  to: string,
+) {
+  const { data, error } = await admin
+    .from("clients")
+    .select("id, expedition_id, name, email, phone, hubspot_contact_id, hubspot_status, hs_status, hs_deal_id, partner_note");
+  if (error) throw new Error(`clientes: ${error.message}`);
+  const clients = (data ?? []) as (StatusClient & Pick<Client, "id" | "expedition_id" | "hubspot_status" | "hs_status" | "hs_deal_id" | "partner_note">)[];
+  if (!clients.length) return;
+
+  const unlinked = clients.filter((c) => !c.hubspot_contact_id);
+  const people = unlinked.length ? await findContacts(cfg, unlinked.map((c) => c.email), unlinked.map((c) => c.phone)) : [];
+  const contactOf = new Map(clients.map((c) => [c.id, c.hubspot_contact_id ?? linkContact(c, people)?.id ?? null]));
+  const obs = await readContactObs(cfg, [...contactOf.values()].filter((x): x is string => !!x));
+
+  const open = from ? await searchOpenDealsInWindow(cfg, from, to) : [];
+  const openAssocs = await dealContacts(cfg, open.map((d) => d.id));
+  const openContacts = await readContacts(cfg, [...openAssocs.values()].flat().map((a) => a.contactId));
+  const toStatus = (list: HsDeal[], kind: StatusDeal["kind"], as: Map<string, Association[]>, cs: Map<string, HsContact>) =>
+    list.flatMap((d): StatusDeal[] => {
+      const trip = readLegsAny(d.properties);
+      if (!trip) return [];
+      const people = (as.get(d.id) ?? []).map((a) => {
+        const c = cs.get(a.contactId);
+        return { contactId: a.contactId, name: c?.name ?? "", email: c?.email ?? "", phone: c?.phone ?? "" };
+      });
+      return [{ id: d.id, kind, legs: trip.legs, end_date: trip.end, people }];
+    });
+  const statusDeals = [...toStatus(won, "won", wonAssocs, wonContacts), ...toStatus(open, "open", openAssocs, openContacts)];
+  const expById = new Map(exps.map((e) => [e.id, e]));
+
+  for (const c of clients) {
+    const exp = expById.get(c.expedition_id);
+    if (!exp) continue;
+    const contactId = contactOf.get(c.id) ?? null;
+    const st = clientHubspotStatus({ ...c, hubspot_contact_id: contactId }, exp, statusDeals);
+    const patch = {
+      hubspot_contact_id: contactId,
+      hubspot_status: c.hubspot_status ?? (contactId ? "existente" : null),
+      hs_status: st.status,
+      hs_deal_id: st.dealId,
+      partner_note: contactId ? obs.get(contactId) ?? "" : c.partner_note,
+    };
+    const changed = (Object.keys(patch) as (keyof typeof patch)[]).some((k) => (c[k] ?? null) !== (patch[k] ?? null));
+    if (!changed) continue;
+    const { error: uErr } = await admin.from("clients").update(patch).eq("id", c.id);
+    if (uErr) throw new Error(`cliente ${c.id}: ${uErr.message}`);
   }
 }

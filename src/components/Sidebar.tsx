@@ -18,6 +18,7 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
     : [
         { href: "/painel", label: "Painel" },
         { href: "/expedicoes", label: "Expedições" },
+        { href: "/extrato", label: "Extrato" },
       ];
   return (
     <aside className={`sidebar ${isVay ? "vay" : "parceiro"}`}>

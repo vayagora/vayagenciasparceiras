@@ -197,3 +197,33 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .login .brandside p { font-size: 18px; line-height: 1.6; color: rgba(255,255,255,.85); }
 .login .formside { flex: 999 1 480px; display: flex; align-items: center; justify-content: center; padding: 48px 24px; background: #fff; }
 .login .formside > div { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 22px; }
+
+/* Modal de produto (voo / hospedagem / seguro) */
+.badge-btn { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; min-height: 28px; }
+.badge-btn:hover { filter: brightness(0.95); text-decoration: underline; }
+.badge-btn:focus-visible { outline: 2px solid var(--purple-500); outline-offset: 2px; }
+.modal { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 24px; border: 0; border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgba(22, 22, 27, 0.24); background: var(--surface-card); color: var(--text-body); }
+.modal::backdrop { background: rgba(22, 22, 27, 0.45); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.modal-block { padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 14px; }
+.facts dt { color: var(--text-muted); }
+.facts dd { margin: 0; color: var(--text-strong); }
+.note { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: var(--radius-sm, 10px); background: var(--surface-card); border: 1px solid var(--border-subtle); font-size: 14px; }
+
+/* Saldo e etapas */
+.balance-card { position: relative; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 28px 32px; border-radius: var(--radius-lg); background: var(--surface-brand); color: #fff; box-shadow: var(--shadow-brand); }
+.balance-card .label { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,.85); }
+.balance-card .amount { font-family: var(--font-display); font-size: clamp(40px, 6vw, 56px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
+.balance-card .sub { font-size: 14px; color: rgba(255,255,255,.85); }
+.balance-card .btn-light { display: inline-flex; align-items: center; min-height: 44px; padding: 0 22px; border-radius: 999px; background: #fff; color: var(--purple-700); font-weight: 600; font-size: 15px; text-decoration: none; }
+.stat-trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.stat { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.stat .n { font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--text-strong); }
+.stat .l { font-size: 13px; color: var(--text-muted); }
+.stat.done { background: var(--purple-50); }
+.stat.done .n { color: var(--purple-700); font-size: 34px; }
+.stat.done .l { color: var(--purple-700); font-weight: 600; }
+.kpi .highlight { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin-top: 4px; padding: 6px 12px; border-radius: 999px; background: var(--purple-50); color: var(--purple-700); font-weight: 700; font-size: 14px; }
+.amount-in { color: #17694A; font-weight: 700; }
+.amount-out { color: var(--text-strong); font-weight: 700; }

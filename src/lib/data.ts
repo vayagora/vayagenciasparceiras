@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { Ledger } from "./ledger";
 import { createClient } from "./supabase/server";
-import type { Client, Deal, Expedition, Partner, Passenger, Profile } from "./types";
+import type { BalanceEntry, Client, Deal, DealNote, Expedition, Partner, Passenger, Profile } from "./types";
 
 export type Session = {
   profile: Profile;
@@ -53,6 +53,8 @@ export type World = {
   exps: Expedition[];
   clients: Client[];
   deals: Deal[];
+  notes: DealNote[];
+  entries: BalanceEntry[];
   ledger: Ledger;
 };
 
@@ -60,14 +62,16 @@ export type World = {
 export const loadWorld = cache(async (): Promise<World> => {
   const supabase = await createClient();
   // deal_passengers: o parceiro só recebe os passageiros que ele cadastrou (RLS).
-  const [partners, exps, clients, deals, passengers] = await Promise.all([
+  const [partners, exps, clients, deals, passengers, notes, entries] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("clients").select("*").order("created_at"),
     supabase.from("deals").select("*").order("closed_on", { ascending: false }),
     supabase.from("deal_passengers").select("*").order("position"),
+    supabase.from("deal_notes").select("*").order("created_at"),
+    supabase.from("balance_entries").select("*").order("entry_date"),
   ]);
-  for (const r of [partners, exps, clients, deals, passengers]) {
+  for (const r of [partners, exps, clients, deals, passengers, notes, entries]) {
     if (r.error) throw new Error(r.error.message);
   }
   const byDeal = new Map<string, Passenger[]>();
@@ -84,7 +88,10 @@ export const loadWorld = cache(async (): Promise<World> => {
       hotel: Number(d.hotel),
       seguro: Number(d.seguro),
       passengers: byDeal.get(d.id) ?? [],
+      details: d.details ?? {},
     })),
+    notes: (notes.data ?? []) as DealNote[],
+    entries: ((entries.data ?? []) as BalanceEntry[]).map((e) => ({ ...e, amount: Number(e.amount) })),
   };
   return { ...w, ledger: new Ledger(w.deals, w.partners, w.exps, w.clients) };
 });

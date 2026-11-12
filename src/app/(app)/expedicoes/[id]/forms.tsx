@@ -5,7 +5,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { CITIES } from "@/lib/cities";
 import { STAGES } from "@/lib/commission";
 import { parseRows } from "@/lib/csv";
-import type { StageId } from "@/lib/types";
+import type { ManualStage } from "@/lib/types";
 import { Tip } from "@/components/ui";
 import { addClient, assignDeal, createDeal, importClients, saveFollowUp, setReviewed, type FormState } from "../../actions";
 
@@ -149,32 +149,33 @@ function ImportForm({ expId, onClose }: { expId: string; onClose: () => void }) 
 
 // ---------- Vay: follow-up ----------
 
-export function FollowUpForm({ expId, client }: { expId: string; client: { id: string; name: string; contact: string; stage: StageId; note: string } }) {
+export function FollowUpForm({ expId, client }: { expId: string; client: { id: string; name: string; contact: string; stage: ManualStage; shown: string; note: string } }) {
   const [state, action, pending] = useActionState(saveFollowUp.bind(null, client.id), undefined);
   return (
     <section className="panel stack" id="follow-up">
       <div className="stack" style={{ gap: 2 }}>
-        <div className="eyebrow">Follow-up</div>
+        <div className="eyebrow">Etapa do cliente</div>
         <div className="ttl">
           <h2 className="section-title">{client.name}</h2>
-          <Tip>Compras e valores vêm dos negócios fechados no HubSpot com o afiliado deste parceiro e não são editados aqui.</Tip>
+          <Tip>A etapa vem do HubSpot: não contactado, em negociação (negócio em aberto para esta expedição) ou compra concluída. Aqui você só marca quem não deve ser contactado ou comprou em outro lugar. Compra concluída no HubSpot sempre prevalece.</Tip>
         </div>
-        <span className="small muted">{client.contact}</span>
+        <span className="small muted">{client.contact} · hoje: <strong>{client.shown}</strong></span>
       </div>
       <form action={action} className="form">
-        <div className="field" style={{ maxWidth: 320 }}>
-          <label htmlFor="fu-stage">Etapa</label>
+        <div className="field" style={{ maxWidth: 360 }}>
+          <label htmlFor="fu-stage">Marcação manual</label>
           <select id="fu-stage" name="stage" className="select" defaultValue={client.stage}>
-            {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            <option value="auto">Automático (pelo HubSpot)</option>
+            {STAGES.filter((s) => s.manual).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
         </div>
         <div className="field">
-          <label htmlFor="fu-note">Nota do follow-up</label>
+          <label htmlFor="fu-note">Nota interna (só a Vay vê)</label>
           <textarea id="fu-note" name="note" className="textarea" defaultValue={client.note} />
         </div>
         <Feedback state={state} />
         <div className="row">
-          <button type="submit" className="btn primary" disabled={pending}>Salvar follow-up</button>
+          <button type="submit" className="btn primary" disabled={pending}>Salvar</button>
           <Link href={`/expedicoes/${expId}`} className="btn ghost">Fechar</Link>
         </div>
       </form>
