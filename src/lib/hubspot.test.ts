@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { airportPlace, hubspotConfig, money, normalizeCity, pickTitular, readTrip, toIsoDate, type Association } from "./hubspot";
+import { airportPlace, hubspotConfig, money, normalizeCity, pickAgency, pickTitular, readTrip, toIsoDate, type Association } from "./hubspot";
 import { mapDeal, planPassengers } from "./sync";
 
 const a = (contactId: string, order: number, labels: string[] = []): Association => ({ contactId, order, labels });
@@ -43,7 +43,7 @@ const aereo = {
   servico: "Passagem Aérea",
   amount: "23570",
   closedate: "2026-07-20T21:34:43.853Z",
-  agencia_parceira: "JT Viajar e Correr",
+  origem_do_negocio: "Afiliado",
   aeroporto_de_partida: "DXB – Dubai, United Arab Emirates – Intl,",
   data_da_volta_: "2026-11-27",
   aeroporto_de_chegada___trecho_2: "BKK – Bangkok, Thailand – Bangkok Intl Airport,",
@@ -53,6 +53,19 @@ const aereo = {
   destino___trecho_4: "CNF – Belo Horizonte, Brasil – Tancredo Neves,",
   data_da_partida___trecho_2: "2026-12-19",
 };
+
+describe("agência do negócio (empresa associada)", () => {
+  const parceiros = ["JT Viajar e Correr", "Horizonte Eventos"];
+  it("usa a empresa que é parceira, com o nome como está no sistema", () => {
+    expect(pickAgency(["Vay Agora", "jt viajar e correr"], parceiros)).toBe("JT Viajar e Correr");
+  });
+  it("empresa que não é parceira: devolve o nome dela (entra sinalizado)", () => {
+    expect(pickAgency(["Outra Agência"], parceiros)).toBe("Outra Agência");
+  });
+  it("sem empresa associada: null", () => {
+    expect(pickAgency([], parceiros)).toBeNull();
+  });
+});
 
 describe("aeroportos do HubSpot", () => {
   it("aeroporto perto de uma cidade da lista vira essa cidade", () => {
@@ -128,18 +141,21 @@ describe("conversões do negócio", () => {
     expect(money(null)).toBe(0);
   });
 
-  it("mapDeal: agência, fechamento e valor na coluna do produto", () => {
+  it("config padrão: Emissão Realizada + origem Afiliado", () => {
     const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
     expect(cfg.wonStages).toEqual(["135525686"]);
-    const r = mapDeal({ id: "61129597452", properties: aereo }, cfg);
+    expect([cfg.origemProp, cfg.origemValue]).toEqual(["origem_do_negocio", "Afiliado"]);
+  });
+
+  it("mapDeal: agência, fechamento e valor na coluna do produto", () => {
+    const r = mapDeal({ id: "61129597452", properties: aereo }, "JT Viajar e Correr");
     expect(r).toMatchObject({
       row: { hubspot_id: "61129597452", afiliado: "JT Viajar e Correr", closed_on: "2026-07-20", voo: 23570, hotel: 0, seguro: 0, end_date: "2026-12-19" },
     });
   });
 
-  it("mapDeal: sem agência parceira é ignorado", () => {
-    const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
-    expect(mapDeal({ id: "1", properties: { ...aereo, agencia_parceira: "" } }, cfg)).toEqual({ skip: "sem agência parceira" });
+  it("mapDeal: sem empresa associada é ignorado", () => {
+    expect(mapDeal({ id: "1", properties: aereo }, null)).toEqual({ skip: "sem empresa (agência) associada" });
   });
 
   it("sem token, a integração fica desligada", () => {

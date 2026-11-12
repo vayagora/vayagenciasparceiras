@@ -5,10 +5,11 @@ Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócio
 ## Quais negócios entram
 
 - Etapa do funil em `HUBSPOT_WON_STAGES` (padrão `135525686` = "Emissão Realizada").
-- Campo da agência parceira (`HUBSPOT_PROP_AFILIADO`, padrão `agencia_parceira`) preenchido.
-  A opção escolhida precisa ser **exatamente** o nome do parceiro no sistema (ex.: "JT Viajar e Correr").
-- **Pendente no HubSpot:** esse campo ainda não existe. Proposta: "Origem do Negócio" = "Agências Parceiras"
-  e uma lista suspensa "Agência Parceira" com as agências.
+- **Origem do Negócio** = "Afiliado" (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`).
+- A **agência é a Empresa associada ao negócio**. O nome da empresa no HubSpot precisa ser igual ao nome
+  (afiliado) do parceiro no sistema, ignorando acentos e maiúsculas (ex.: "JT Viajar e Correr").
+  Se houver várias empresas associadas, vale a que é parceira. Empresa que não é parceira → o negócio entra
+  sinalizado; sem empresa associada → ignorado (aparece no resultado da sincronização).
 
 ## Produto e valor
 
@@ -54,5 +55,5 @@ Contatos associados ao negócio; o rótulo de associação "Titular" (`HUBSPOT_T
 
 ## App privado
 
-Escopos: `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.objects.deals.read`,
+Escopos: `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.objects.deals.read`, `crm.objects.companies.read`,
 `crm.schemas.deals.write`. O token vai em `HUBSPOT_TOKEN` (Vercel › Settings › Environment Variables).

@@ -1,7 +1,9 @@
 // Sincronização HubSpot → Supabase (idempotente). Roda com a chave service_role, só no servidor.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  dealCompanies,
   dealContacts,
+  pickAgency,
   hubspotConfig,
   pickTitular,
   readContacts,
@@ -11,7 +13,6 @@ import {
   type Association,
   type HsContact,
   type HsDeal,
-  type HubspotConfig,
 } from "./hubspot";
 import type { Leg } from "./types";
 
@@ -61,10 +62,10 @@ export type DealRow = {
   seguro: number;
 };
 
-export function mapDeal(d: HsDeal, cfg: HubspotConfig): { row: DealRow } | { skip: string } {
+// afiliado = agência associada ao negócio (pickAgency), já resolvida.
+export function mapDeal(d: HsDeal, afiliado: string | null): { row: DealRow } | { skip: string } {
   const p = d.properties;
-  const afiliado = String(p[cfg.afiliadoProp] ?? "").trim();
-  if (!afiliado) return { skip: "sem agência parceira" };
+  if (!afiliado) return { skip: "sem empresa (agência) associada" };
   const closed = toIsoDate(p.closedate);
   if (!closed) return { skip: "sem data de fechamento" };
   const trip = readTrip(p);
@@ -104,11 +105,15 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     const hs = await searchWonDeals(cfg);
     const assocs = await dealContacts(cfg, hs.map((d) => d.id));
     const contacts = await readContacts(cfg, [...assocs.values()].flat().map((a) => a.contactId));
+    const companies = await dealCompanies(cfg, hs.map((d) => d.id));
+    const { data: partners, error: pErr0 } = await admin.from("partners").select("afiliado");
+    if (pErr0) throw new Error(`parceiros: ${pErr0.message}`);
+    const afiliados = (partners ?? []).map((p) => String(p.afiliado));
     const skipped: Skipped[] = [];
     let n = 0;
 
     for (const h of hs) {
-      const mapped = mapDeal(h, cfg);
+      const mapped = mapDeal(h, pickAgency(companies.get(h.id) ?? [], afiliados));
       if ("skip" in mapped) {
         skipped.push({ id: h.id, reason: mapped.skip });
         continue;

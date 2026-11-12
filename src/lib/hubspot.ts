@@ -12,7 +12,9 @@ export type HubspotConfig = {
   token: string;
   wonStages: string[];
   titularLabel: string;
-  afiliadoProp: string;
+  // Negócio de agência parceira = este campo com este valor + empresa (agência) associada ao negócio
+  origemProp: string;
+  origemValue: string;
 };
 
 export function hubspotConfig(env: Record<string, string | undefined> = process.env): HubspotConfig | null {
@@ -23,7 +25,8 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
     // 135525686 = "Emissão Realizada" no funil "Pipeline de Vendas"
     wonStages: (env.HUBSPOT_WON_STAGES ?? "135525686").split(",").map((s) => s.trim()).filter(Boolean),
     titularLabel: env.HUBSPOT_TITULAR_LABEL ?? "Titular",
-    afiliadoProp: env.HUBSPOT_PROP_AFILIADO ?? "agencia_parceira",
+    origemProp: env.HUBSPOT_ORIGEM_PROP ?? "origem_do_negocio",
+    origemValue: env.HUBSPOT_ORIGEM_VALUE ?? "Afiliado",
   };
 }
 
@@ -55,7 +58,7 @@ export function dealProperties(cfg: HubspotConfig): string[] {
   return [
     "closedate",
     "dealstage",
-    cfg.afiliadoProp,
+    cfg.origemProp,
     FIELDS.servico,
     FIELDS.amount,
     ...FIELDS.trechos.flatMap((t) => [t.dest, t.date]),
@@ -172,6 +175,18 @@ export function contactName(p: Record<string, string | null | undefined>): strin
   return n || p.email || p.phone || "Contato sem nome";
 }
 
+// Agência do negócio = empresa associada cujo nome é um parceiro cadastrado (ignora acentos e maiúsculas).
+// Devolve o nome como está no sistema. Sem parceiro correspondente, devolve o nome da primeira empresa
+// (o negócio entra sinalizado "Nenhuma expedição encontrada" / afiliado sem parceiro); sem empresa, null.
+export function pickAgency(companyNames: string[], partnerAfiliados: string[]): string | null {
+  const names = companyNames.map((n) => n.trim()).filter(Boolean);
+  for (const n of names) {
+    const hit = partnerAfiliados.find((a) => fold(a) === fold(n));
+    if (hit) return hit;
+  }
+  return names[0] ?? null;
+}
+
 // ---------------------------------------------------------------- Chamadas à API
 
 export class HubspotError extends Error {}
@@ -201,7 +216,7 @@ const chunk = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length
 
 export type HsDeal = { id: string; properties: Record<string, string | null> };
 
-// Negócios ganhos com "afiliado" preenchido. Lê todos a cada sincronização para pegar
+// Negócios ganhos com origem "Afiliado". Lê todos a cada sincronização para pegar
 // também mudanças nas associações (que não alteram a data de modificação do negócio).
 export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
   const props = dealProperties(cfg);
@@ -216,7 +231,7 @@ export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
           {
             filters: [
               { propertyName: "dealstage", operator: "IN", values: cfg.wonStages },
-              { propertyName: cfg.afiliadoProp, operator: "HAS_PROPERTY" },
+              { propertyName: cfg.origemProp, operator: "EQ", value: cfg.origemValue },
             ],
           },
         ],
@@ -229,6 +244,31 @@ export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
     out.push(...r.results);
     after = r.paging?.next?.after;
   } while (after);
+  return out;
+}
+
+// Empresas (agências) associadas a cada negócio, com o nome.
+export async function dealCompanies(cfg: HubspotConfig, dealIds: string[]): Promise<Map<string, string[]>> {
+  const ids = new Map<string, string[]>();
+  for (const part of chunk(dealIds, 100)) {
+    const r = await call<{ results: { from: { id: string }; to: { toObjectId: number | string }[] }[] }>(
+      cfg,
+      "/crm/v4/associations/deals/companies/batch/read",
+      { inputs: part.map((id) => ({ id })) },
+    );
+    for (const row of r.results) ids.set(String(row.from.id), row.to.map((t) => String(t.toObjectId)));
+  }
+  const names = new Map<string, string>();
+  for (const part of chunk([...new Set([...ids.values()].flat())], 100)) {
+    const r = await call<{ results: { id: string; properties: Record<string, string | null> }[] }>(
+      cfg,
+      "/crm/v3/objects/companies/batch/read",
+      { properties: ["name"], inputs: part.map((id) => ({ id })) },
+    );
+    for (const c of r.results) names.set(c.id, String(c.properties.name ?? "").trim());
+  }
+  const out = new Map<string, string[]>();
+  for (const [deal, cids] of ids) out.set(deal, cids.map((c) => names.get(c) ?? "").filter(Boolean));
   return out;
 }
 
