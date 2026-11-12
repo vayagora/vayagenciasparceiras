@@ -234,6 +234,24 @@ export function DealActions({
   );
 }
 
+// Negócio não sinalizado: a Vay só marca como conferido (ex.: não é do parceiro). A correção é no HubSpot.
+export function ReviewToggle({ dealId, reviewed }: { dealId: string; reviewed: boolean }) {
+  const [pending, start] = useTransition();
+  return (
+    <div className="row" style={{ opacity: pending ? 0.6 : 1 }}>
+      {reviewed ? (
+        <button type="button" className="btn ghost sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, false))}>
+          Desfazer conferência
+        </button>
+      ) : (
+        <button type="button" className="btn outline sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, true))}>
+          Marcar como conferido
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function NewDealForm({ afiliado, defaultCity, defaultDate }: { afiliado: string; defaultCity: string; defaultDate: string }) {
   const [state, action, pending] = useActionState(createDeal.bind(null, afiliado), undefined);
   const [open, setOpen] = useState(false);

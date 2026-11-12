@@ -205,6 +205,7 @@ export async function syncNow(): Promise<FormState> {
   return {
     ok:
       plural(r.deals, "negócio sincronizado", "negócios sincronizados") +
+      (r.unsignaled ? ` · ${plural(r.unsignaled, "encontrado sem sinalização no HubSpot", "encontrados sem sinalização no HubSpot")}` : "") +
       (r.skipped.length
         ? ` · ${r.skipped.length} ignorado${r.skipped.length === 1 ? "" : "s"}: ` +
           r.skipped.slice(0, 5).map((x) => `#${x.id} (${x.reason})`).join(", ") +

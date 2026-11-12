@@ -63,6 +63,13 @@ export type Deal = {
   id: string;
   hubspot_id: string | null;
   seq: number;
+  // Nome do negócio no HubSpot
+  name: string;
+  // false = encontrado por destino e data, mas não sinalizado no HubSpot (só a Vay vê; não remunera)
+  signaled: boolean;
+  // Como está no HubSpot: origem do negócio e parceiro pela empresa associada (para indicar o que corrigir)
+  hs_origem: string;
+  hs_agency: string;
   afiliado: string;
   closed_on: string;
   legs: Leg[];

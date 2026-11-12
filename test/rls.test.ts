@@ -83,6 +83,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     `);
 
     await db.query(sql("0002_passageiros.sql"));
+    await db.query(sql("0003_nao_sinalizados.sql"));
     await db.query(GRANTS);
 
     await db.query(`
@@ -162,6 +163,25 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     expect(await as(ID.pa, () => rows(`select id from sync_runs`))).toEqual([]);
   });
 
+  it("parceiro não lê negócios não sinalizados no HubSpot nem os passageiros deles", async () => {
+    const id = "40000000-0000-0000-0000-0000000000c1";
+    await db.query(
+      `insert into deals (id, hubspot_id, afiliado, signaled, hs_agency, closed_on, legs, end_date, voo)
+       values ($1, '7777', 'Horizonte Eventos', false, 'Horizonte Eventos', '2026-09-01', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19', 500)`,
+      [id],
+    );
+    await db.query(
+      `insert into deal_passengers (deal_id, hubspot_contact_id, name, email, is_titular) values ($1, '990', 'Gislaine Souza', 'gislaine@email.com', true)`,
+      [id],
+    );
+    await as(ID.pa, async () => {
+      expect(await rows(`select id from deals where id = $1`, [id])).toEqual([]);
+      expect(await rows(`select id from deal_passengers where deal_id = $1`, [id])).toEqual([]);
+    });
+    expect(await as(ID.vay, () => rows(`select id from deals where id = $1`, [id]))).toHaveLength(1);
+    await db.query(`delete from deals where id = $1`, [id]);
+  });
+
   it("equipe Vay lê todos os passageiros", async () => {
     const ps = await as(ID.vay, () => rows(`select name from deal_passengers order by name`));
     expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Bia Lopes", "Emerson Souza", "Gislaine Souza"]);
@@ -171,6 +191,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
     await db.query(sql("0002_passageiros.sql"));
+    await db.query(sql("0003_nao_sinalizados.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

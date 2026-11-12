@@ -82,7 +82,7 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Expedition,
 
 // ---------------------------------------------------------------- Resolução
 
-export type FlagKey = "aprox" | "multi" | "nenhuma" | "fora" | "passageiro" | "titular";
+export type FlagKey = "aprox" | "multi" | "nenhuma" | "fora" | "passageiro" | "titular" | "nao_sinalizado";
 export type Flag = { key: FlagKey; label: string; tone: Tone };
 
 // Sinalizações informativas não geram pendência de conferência.
@@ -108,7 +108,33 @@ export type Resolved = {
   unregisteredCount: number;
   // Cliente da linha principal: o titular, se cadastrado; senão o primeiro cadastrado
   primaryClientId: string | null;
+  // Negócio não sinalizado no HubSpot: expedição compatível por destino e data (não remunera)
+  suggested: Expedition | null;
+  // Comissão que geraria se fosse sinalizado
+  potential: Money;
+  // Algum passageiro bate com a lista do parceiro (por contato, e-mail, telefone ou nome)
+  listEvidence: boolean;
+  // O que corrigir no HubSpot
+  fixes: string[];
 };
+
+const foldName = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+// Indício mais fraco que samePerson, usado só para negócios não sinalizados: mesmo nome completo
+// (pelo menos nome e sobrenome; só o primeiro nome não basta).
+export function sameName(a: string, b: string): boolean {
+  const x = foldName(a);
+  return x.includes(" ") && x === foldName(b);
+}
+
+// O que falta no HubSpot para o negócio contar como de agência parceira.
+export function hubspotFixes(d: Pick<Deal, "hs_origem" | "hs_agency">, partnerName: string, origemValue = "Afiliado"): string[] {
+  const out: string[] = [];
+  if (d.hs_origem !== origemValue) out.push(`marcar "Origem do Negócio" como "${origemValue}"${d.hs_origem ? ` (hoje: ${d.hs_origem})` : ""}`);
+  if (!d.hs_agency) out.push(`associar a empresa "${partnerName}" ao negócio`);
+  return out;
+}
 
 // Titular primeiro, depois a ordem de associação.
 export function sortPassengers(ps: Passenger[]): Passenger[] {
@@ -163,7 +189,36 @@ export function resolveDeals(
       unregistered: [],
       unregisteredCount: 0,
       primaryClientId: null,
+      suggested: null,
+      potential: ZERO,
+      listEvidence: false,
+      fixes: [],
     };
+
+    // Não sinalizado no HubSpot: procura a expedição por destino e data; nunca remunera.
+    if (d.signaled === false) {
+      const hinted = d.hs_agency ? byAfiliado.get(d.hs_agency) ?? null : null;
+      const pool = hinted ? exps.filter((e) => e.partner_id === hinted.id) : exps;
+      const best = pool
+        .map((e) => ({ e, m: evalDeal(d, e, tol) }))
+        .filter((x): x is { e: Expedition; m: Match } => !!x.m)
+        .sort((a, b) => b.m.score - a.m.score)[0];
+      if (best) {
+        const owner = partners.find((p) => p.id === best.e.partner_id) ?? null;
+        const expClients = clients.filter((c) => c.expedition_id === best.e.id);
+        r.partner = owner;
+        r.suggested = best.e;
+        r.reason = best.m.reason;
+        r.potential = dealCom(d);
+        r.listEvidence = (d.passengers ?? []).some((p) =>
+          expClients.some((c) => samePerson(c, p) || sameName(c.name, p.name)),
+        );
+        r.fixes = hubspotFixes(d, owner?.afiliado ?? "da agência");
+        r.flags.push({ key: "nao_sinalizado", label: "Encontrado, mas não sinalizado no HubSpot", tone: "red" });
+        r.needsReview = !d.reviewed;
+      }
+      return r;
+    }
 
     if (d.override_none || d.override_expedition_id) {
       r.manual = true;

@@ -102,11 +102,21 @@ export class Ledger {
   }
 
   // Pendências de conferência: por expedição, e negócios sem expedição por parceiro.
+  // Inclui os não sinalizados no HubSpot encontrados para esta expedição.
   pendingFor(e: Expedition): number {
     return this.resolved.filter(
       (r) =>
         r.needsReview &&
-        ((r.exp && r.exp.id === e.id) || (!r.exp && r.partner?.id === e.partner_id)),
+        (r.suggested
+          ? r.suggested.id === e.id
+          : (r.exp && r.exp.id === e.id) || (!r.exp && r.deal.signaled !== false && r.partner?.id === e.partner_id)),
     ).length;
+  }
+
+  // Negócios encontrados por destino e data para a expedição, mas não sinalizados no HubSpot (só Vay).
+  unsignaledFor(e: Expedition): Resolved[] {
+    return this.resolved
+      .filter((r) => r.suggested?.id === e.id)
+      .sort((a, b) => Number(b.listEvidence) - Number(a.listEvidence) || b.potential.total - a.potential.total);
   }
 }

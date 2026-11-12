@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dealCompanies,
   dealContacts,
-  pickAgency,
+  matchPartner,
+  searchWonDealsInWindow,
   hubspotConfig,
   pickTitular,
   readContacts,
@@ -14,7 +15,10 @@ import {
   type HsContact,
   type HsDeal,
 } from "./hubspot";
-import type { Leg } from "./types";
+import { expEnd } from "./commission";
+import { dayNum, isoOf } from "./format";
+import { DEFAULT_TOL, evalDeal } from "./matching";
+import type { Expedition, Leg } from "./types";
 
 export type PassengerRow = {
   hubspot_contact_id: string;
@@ -53,6 +57,10 @@ export function planPassengers(
 // Negócio do HubSpot → linha de deals. O valor do negócio vai para a coluna do produto (Serviço).
 export type DealRow = {
   hubspot_id: string;
+  name: string;
+  signaled: boolean;
+  hs_origem: string;
+  hs_agency: string;
   afiliado: string;
   closed_on: string;
   legs: Leg[];
@@ -62,10 +70,16 @@ export type DealRow = {
   seguro: number;
 };
 
-// afiliado = agência associada ao negócio (pickAgency), já resolvida.
-export function mapDeal(d: HsDeal, afiliado: string | null): { row: DealRow } | { skip: string } {
+// Sinalizado: afiliado = agência associada (parceiro). Não sinalizado: afiliado vazio (só a Vay vê),
+// hsAgency = parceiro pela empresa associada, se houver.
+export function mapDeal(
+  d: HsDeal,
+  afiliado: string | null,
+  opts: { signaled?: boolean; hsAgency?: string; origemProp?: string } = {},
+): { row: DealRow } | { skip: string } {
   const p = d.properties;
-  if (!afiliado) return { skip: "sem empresa (agência) associada" };
+  const signaled = opts.signaled ?? true;
+  if (signaled && !afiliado) return { skip: "sem empresa (agência) associada" };
   const closed = toIsoDate(p.closedate);
   if (!closed) return { skip: "sem data de fechamento" };
   const trip = readTrip(p);
@@ -73,7 +87,11 @@ export function mapDeal(d: HsDeal, afiliado: string | null): { row: DealRow } | 
   return {
     row: {
       hubspot_id: d.id,
-      afiliado,
+      name: String(p.dealname ?? "").trim(),
+      signaled,
+      hs_origem: String(p[opts.origemProp ?? "origem_do_negocio"] ?? "").trim(),
+      hs_agency: opts.hsAgency ?? (signaled ? afiliado ?? "" : ""),
+      afiliado: signaled ? afiliado! : "",
       closed_on: closed,
       legs: trip.legs,
       end_date: trip.end,
@@ -84,8 +102,14 @@ export function mapDeal(d: HsDeal, afiliado: string | null): { row: DealRow } | 
   };
 }
 
+// Negócio não sinalizado só é guardado se combinar com alguma expedição (do parceiro da empresa associada, se houver).
+export function matchesSomeExpedition(row: DealRow, exps: Expedition[], partnerIdByAfiliado: Map<string, string>): boolean {
+  const pid = row.hs_agency ? partnerIdByAfiliado.get(row.hs_agency) : undefined;
+  return exps.some((e) => (!pid || e.partner_id === pid) && !!evalDeal(row, e));
+}
+
 export type Skipped = { id: string; reason: string };
-export type SyncResult = { ok: boolean; deals: number; skipped: Skipped[]; error?: string };
+export type SyncResult = { ok: boolean; deals: number; skipped: Skipped[]; unsignaled?: number; error?: string };
 
 export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
   const cfg = hubspotConfig();
@@ -102,21 +126,52 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
   };
 
   try {
-    const hs = await searchWonDeals(cfg);
+    const [{ data: partners, error: pErr0 }, { data: expRows, error: eErr0 }] = await Promise.all([
+      admin.from("partners").select("id, afiliado"),
+      admin.from("expeditions").select("*"),
+    ]);
+    if (pErr0 || eErr0) throw new Error(`parceiros/expedições: ${(pErr0 ?? eErr0)!.message}`);
+    const afiliados = (partners ?? []).map((p) => String(p.afiliado));
+    const partnerIdByAfiliado = new Map((partners ?? []).map((p) => [String(p.afiliado), String(p.id)]));
+    const exps = (expRows ?? []) as Expedition[];
+
+    // 1) sinalizados (origem Afiliado)  2) qualquer negócio ganho com viagem perto das expedições
+    const flagged = await searchWonDeals(cfg);
+    let nearby: HsDeal[] = [];
+    if (exps.length) {
+      const starts = exps.map((e) => e.start_date).sort();
+      const ends = exps.map((e) => expEnd(e)).sort();
+      nearby = await searchWonDealsInWindow(cfg, isoOf(dayNum(starts[0]) - 30), isoOf(dayNum(ends[ends.length - 1]) + DEFAULT_TOL.after));
+    }
+    const fromFlagged = new Set(flagged.map((d) => d.id));
+    const hs = [...flagged, ...nearby.filter((d) => !fromFlagged.has(d.id))];
+
     const assocs = await dealContacts(cfg, hs.map((d) => d.id));
     const contacts = await readContacts(cfg, [...assocs.values()].flat().map((a) => a.contactId));
     const companies = await dealCompanies(cfg, hs.map((d) => d.id));
-    const { data: partners, error: pErr0 } = await admin.from("partners").select("afiliado");
-    if (pErr0) throw new Error(`parceiros: ${pErr0.message}`);
-    const afiliados = (partners ?? []).map((p) => String(p.afiliado));
     const skipped: Skipped[] = [];
+    const keptUnsignaled: string[] = [];
     let n = 0;
 
     for (const h of hs) {
-      const mapped = mapDeal(h, pickAgency(companies.get(h.id) ?? [], afiliados));
+      const names = companies.get(h.id) ?? [];
+      const partner = matchPartner(names, afiliados);
+      const isAfiliado = String(h.properties[cfg.origemProp] ?? "").trim() === cfg.origemValue;
+      const signaled = isAfiliado && !!partner;
+      const mapped = signaled
+        ? mapDeal(h, partner, { origemProp: cfg.origemProp })
+        : mapDeal(h, null, { signaled: false, hsAgency: partner ?? "", origemProp: cfg.origemProp });
       if ("skip" in mapped) {
-        skipped.push({ id: h.id, reason: mapped.skip });
+        if (fromFlagged.has(h.id)) skipped.push({ id: h.id, reason: mapped.skip });
         continue;
+      }
+      if (!signaled) {
+        if (!matchesSomeExpedition(mapped.row, exps, partnerIdByAfiliado)) {
+          if (fromFlagged.has(h.id))
+            skipped.push({ id: h.id, reason: names.length ? `empresa "${names.join(", ")}" não é parceiro cadastrado` : "sem empresa (agência) associada" });
+          continue;
+        }
+        keptUnsignaled.push(h.id);
       }
       const row = mapped.row;
       const list = assocs.get(h.id) ?? [];
@@ -154,7 +209,12 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
       }
       n++;
     }
-    return finish({ ok: true, deals: n, skipped });
+    // Não sinalizados que deixaram de combinar (ou foram corrigidos) saem da lista.
+    let cleanup = admin.from("deals").delete().eq("signaled", false).not("hubspot_id", "is", null);
+    if (keptUnsignaled.length) cleanup = cleanup.not("hubspot_id", "in", `(${keptUnsignaled.join(",")})`);
+    const { error: cErr } = await cleanup;
+    if (cErr) throw new Error(`limpeza: ${cErr.message}`);
+    return finish({ ok: true, deals: n, skipped, unsignaled: keptUnsignaled.length });
   } catch (e) {
     return finish({ ok: false, deals: 0, skipped: [], error: e instanceof Error ? e.message : String(e) });
   }

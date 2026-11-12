@@ -56,6 +56,7 @@ export const SERVICE_PRODUCT: Record<string, Product> = {
 
 export function dealProperties(cfg: HubspotConfig): string[] {
   return [
+    "dealname",
     "closedate",
     "dealstage",
     cfg.origemProp,
@@ -180,11 +181,16 @@ export function contactName(p: Record<string, string | null | undefined>): strin
 // (o negócio entra sinalizado "Nenhuma expedição encontrada" / afiliado sem parceiro); sem empresa, null.
 export function pickAgency(companyNames: string[], partnerAfiliados: string[]): string | null {
   const names = companyNames.map((n) => n.trim()).filter(Boolean);
-  for (const n of names) {
+  return matchPartner(names, partnerAfiliados) ?? names[0] ?? null;
+}
+
+// Só a empresa que é parceira cadastrada (nome como está no sistema), ou null.
+export function matchPartner(companyNames: string[], partnerAfiliados: string[]): string | null {
+  for (const n of companyNames) {
     const hit = partnerAfiliados.find((a) => fold(a) === fold(n));
     if (hit) return hit;
   }
-  return names[0] ?? null;
+  return null;
 }
 
 // ---------------------------------------------------------------- Chamadas à API
@@ -216,35 +222,48 @@ const chunk = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length
 
 export type HsDeal = { id: string; properties: Record<string, string | null> };
 
-// Negócios ganhos com origem "Afiliado". Lê todos a cada sincronização para pegar
-// também mudanças nas associações (que não alteram a data de modificação do negócio).
-export async function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
-  const props = dealProperties(cfg);
+type Filter = { propertyName: string; operator: string; value?: string; values?: string[]; highValue?: string };
+
+async function searchDeals(cfg: HubspotConfig, filterGroups: { filters: Filter[] }[]): Promise<HsDeal[]> {
   const out: HsDeal[] = [];
   let after: string | undefined;
   do {
-    const r = await call<{ results: HsDeal[]; paging?: { next?: { after: string } } }>(
-      cfg,
-      "/crm/v3/objects/deals/search",
-      {
-        filterGroups: [
-          {
-            filters: [
-              { propertyName: "dealstage", operator: "IN", values: cfg.wonStages },
-              { propertyName: cfg.origemProp, operator: "EQ", value: cfg.origemValue },
-            ],
-          },
-        ],
-        properties: props,
-        sorts: [{ propertyName: "hs_object_id", direction: "ASCENDING" }],
-        limit: 100,
-        after,
-      },
-    );
+    const r = await call<{ results: HsDeal[]; paging?: { next?: { after: string } } }>(cfg, "/crm/v3/objects/deals/search", {
+      filterGroups,
+      properties: dealProperties(cfg),
+      sorts: [{ propertyName: "hs_object_id", direction: "ASCENDING" }],
+      limit: 100,
+      after,
+    });
     out.push(...r.results);
     after = r.paging?.next?.after;
   } while (after);
   return out;
+}
+
+// Negócios ganhos com origem "Afiliado" (sinalizados como de agência). Lê todos a cada sincronização
+// para pegar também mudanças nas associações (que não alteram a data de modificação do negócio).
+export function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
+  return searchDeals(cfg, [
+    {
+      filters: [
+        { propertyName: "dealstage", operator: "IN", values: cfg.wonStages },
+        { propertyName: cfg.origemProp, operator: "EQ", value: cfg.origemValue },
+      ],
+    },
+  ]);
+}
+
+// Todos os negócios ganhos com viagem entre from e to (1º trecho aéreo, check-in ou início do seguro),
+// para encontrar os que não foram sinalizados. Datas "AAAA-MM-DD".
+export function searchWonDealsInWindow(cfg: HubspotConfig, from: string, to: string): Promise<HsDeal[]> {
+  const ms = (iso: string) => String(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)));
+  const stage: Filter = { propertyName: "dealstage", operator: "IN", values: cfg.wonStages };
+  const dates = [FIELDS.trechos[0].date, FIELDS.hotel.start, FIELDS.seguro.start];
+  return searchDeals(
+    cfg,
+    dates.map((prop) => ({ filters: [stage, { propertyName: prop, operator: "BETWEEN", value: ms(from), highValue: ms(to) }] })),
+  );
 }
 
 // Empresas (agências) associadas a cada negócio, com o nome.

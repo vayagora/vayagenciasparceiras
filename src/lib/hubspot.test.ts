@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { airportPlace, hubspotConfig, money, normalizeCity, pickAgency, pickTitular, readTrip, toIsoDate, type Association } from "./hubspot";
-import { mapDeal, planPassengers } from "./sync";
+import { afterEach, vi } from "vitest";
+import { airportPlace, hubspotConfig, matchPartner, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
+import { mapDeal, matchesSomeExpedition, planPassengers } from "./sync";
+import type { Expedition } from "./types";
 
 const a = (contactId: string, order: number, labels: string[] = []): Association => ({ contactId, order, labels });
 
@@ -64,6 +66,10 @@ describe("agência do negócio (empresa associada)", () => {
   });
   it("sem empresa associada: null", () => {
     expect(pickAgency([], parceiros)).toBeNull();
+  });
+  it("matchPartner só aceita parceiro cadastrado", () => {
+    expect(matchPartner(["Outra Agência"], parceiros)).toBeNull();
+    expect(matchPartner(["Outra", "JT VIAJAR E CORRER"], parceiros)).toBe("JT Viajar e Correr");
   });
 });
 
@@ -160,5 +166,45 @@ describe("conversões do negócio", () => {
 
   it("sem token, a integração fica desligada", () => {
     expect(hubspotConfig({})).toBeNull();
+  });
+});
+
+describe("negócios não sinalizados", () => {
+  const bkk: Expedition = { id: "e1", partner_id: "pJT", name: "Tailândia", city: "Bangkok", start_date: "2026-12-01", days: 15, created_at: "" };
+  const lisboa: Expedition = { ...bkk, id: "e2", partner_id: "pX", city: "Lisboa" };
+  const ids = new Map([["JT Viajar e Correr", "pJT"]]);
+
+  it("mapDeal: guarda nome, origem e agência; afiliado vazio (o parceiro não vê)", () => {
+    const r = mapDeal({ id: "9", properties: { ...aereo, dealname: "P-Baroni", origem_do_negocio: "Passivo [ação do contato]" } }, null, {
+      signaled: false,
+      hsAgency: "",
+    });
+    expect(r).toMatchObject({ row: { signaled: false, afiliado: "", name: "P-Baroni", hs_origem: "Passivo [ação do contato]", voo: 23570 } });
+  });
+
+  it("só guarda se combinar com alguma expedição (do parceiro da empresa, se houver)", () => {
+    const m = mapDeal({ id: "9", properties: aereo }, null, { signaled: false });
+    if ("skip" in m) throw new Error(m.skip);
+    expect(matchesSomeExpedition(m.row, [bkk], ids)).toBe(true);
+    expect(matchesSomeExpedition(m.row, [lisboa], ids)).toBe(false);
+    expect(matchesSomeExpedition({ ...m.row, hs_agency: "JT Viajar e Correr" }, [{ ...bkk, partner_id: "pX" }], ids)).toBe(false);
+  });
+});
+
+describe("busca por janela de datas", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("procura negócios ganhos pelo 1º trecho, check-in ou início do seguro", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await searchWonDealsInWindow(hubspotConfig({ HUBSPOT_TOKEN: "x" })!, "2026-11-01", "2026-12-18");
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body);
+    expect(body.filterGroups.map((g: { filters: { propertyName: string }[] }) => g.filters[1].propertyName)).toEqual([
+      "data_da_volta_",
+      "data_de_checkin",
+      "data_de_inicio_da_viagem",
+    ]);
+    expect(body.filterGroups[0].filters[1]).toMatchObject({ operator: "BETWEEN", value: String(Date.UTC(2026, 10, 1)), highValue: String(Date.UTC(2026, 11, 18)) });
+    expect(body.filterGroups[0].filters[0]).toMatchObject({ propertyName: "dealstage", values: ["135525686"] });
   });
 });

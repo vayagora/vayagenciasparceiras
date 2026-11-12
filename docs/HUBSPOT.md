@@ -11,6 +11,23 @@ Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócio
   Se houver várias empresas associadas, vale a que é parceira. Empresa que não é parceira → o negócio entra
   sinalizado; sem empresa associada → ignorado (aparece no resultado da sincronização).
 
+## Negócios não sinalizados
+
+Como os consultores podem esquecer a marcação, a sincronização também busca **todos os negócios ganhos** com
+viagem perto das expedições (1º trecho aéreo, check-in ou início do seguro entre 30 dias antes da primeira
+expedição e 3 dias depois da última). Os que não estão sinalizados (origem ≠ Afiliado e/ou sem a empresa da
+agência) e combinam com alguma expedição por destino e data (mesma regra do vínculo) são guardados como
+**"Encontrado, mas não sinalizado no HubSpot"**:
+
+- aparecem só para a Vay, na tela da expedição (seção própria) e como pendência;
+- **não remuneram** e não entram em nenhum total; mostram a comissão que gerariam;
+- dizem o que corrigir no HubSpot e têm link para o negócio (`HUBSPOT_PORTAL_ID`, padrão 44656712);
+- destacam quando algum passageiro está na lista do parceiro (contato, e-mail, telefone ou nome completo);
+- se a empresa da agência já está associada, só as expedições desse parceiro são consideradas.
+
+Corrigido no HubSpot, o negócio passa a sinalizado na próxima sincronização. Os que deixam de combinar saem
+da lista. O parceiro nunca vê esses negócios (RLS, migração 0003).
+
 ## Produto e valor
 
 Cada negócio vende um serviço (campo **Serviço**, `servico`). O valor é o **Valor do negócio** (`amount`).

@@ -21,6 +21,10 @@ function deal(over: Partial<Deal> & { passengers?: Passenger[] } = {}): Deal {
     id: `d${n}`,
     hubspot_id: null,
     seq: n,
+    name: `Negócio ${n}`,
+    signaled: true,
+    hs_origem: "Afiliado",
+    hs_agency: "Horizonte Eventos",
     afiliado: "Horizonte Eventos",
     closed_on: "2026-09-01",
     legs: [{ city: "Madrid", date: "2026-11-12" }],
@@ -249,6 +253,67 @@ describe("negócios com vários passageiros", () => {
     expect(flagKeys(r)).toEqual(["titular"]);
     expect(r.needsReview).toBe(true);
     expect(l.pendingFor(madrid)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------- Não sinalizados no HubSpot
+
+describe("negócios não sinalizados no HubSpot", () => {
+  const atlas: Partner = { ...partner, id: "pB", name: "Grupo Atlas", afiliado: "Grupo Atlas" };
+  const gramado: Expedition = { ...madrid, id: "eGra", partner_id: "pB", city: "Gramado", start_date: "2026-12-03", days: 4 };
+  const ana = client("Ana", "2026-10-01");
+  const naoSinalizado = (over: Partial<Deal> = {}) =>
+    deal({ signaled: false, afiliado: "", hs_origem: "Passivo [ação do contato]", hs_agency: "", ...over });
+
+  it("destino e data compatíveis: aparece na expedição, não remunera e diz o que corrigir", () => {
+    const l = new Ledger([naoSinalizado({ passengers: [pax("Marcelo", { is_titular: true })] })], [partner], [madrid], [ana]);
+    const r = l.resolved[0];
+    expect(r.exp).toBeNull();
+    expect(r.suggested?.id).toBe("eMad");
+    expect(r.partner?.id).toBe("pA");
+    expect(r.com.total).toBe(0);
+    expect(r.potential.total).toBeCloseTo(370);
+    expect(flagKeys(r)).toEqual(["nao_sinalizado"]);
+    expect(r.listEvidence).toBe(false);
+    expect(r.fixes).toEqual([
+      'marcar "Origem do Negócio" como "Afiliado" (hoje: Passivo [ação do contato])',
+      'associar a empresa "Horizonte Eventos" ao negócio',
+    ]);
+    // fora dos totais e do que o parceiro recebe
+    expect(l.paid).toEqual([]);
+    expect(l.expStats(madrid).total).toBe(0);
+    expect(l.unsignaledFor(madrid).length).toBe(1);
+    expect(l.pendingFor(madrid)).toBe(1);
+  });
+
+  it("passageiro na lista do parceiro (mesmo nome, sem e-mail que bata) é destacado", () => {
+    const anaRibeiro = client("Ana Ribeiro", "2026-10-01");
+    const d = naoSinalizado({ passengers: [pax("ANA  RIBEIRO", { email: "outro@email.com", is_titular: true })] });
+    expect(resolveDeals([d], [partner], [madrid], [anaRibeiro])[0].listEvidence).toBe(true);
+    // só o primeiro nome não basta
+    const d2 = naoSinalizado({ passengers: [pax("Ana", { email: "outro@email.com", is_titular: true })] });
+    expect(resolveDeals([d2], [partner], [madrid], [ana])[0].listEvidence).toBe(false);
+  });
+
+  it("empresa da agência associada, mas origem errada: só pede a origem e fica no parceiro certo", () => {
+    const d = naoSinalizado({ hs_agency: "Grupo Atlas", legs: [{ city: "Gramado", date: "2026-12-03" }], end_date: "2026-12-06" });
+    const [r] = resolveDeals([d], [partner, atlas], [madrid, gramado], [ana]);
+    expect(r.suggested?.id).toBe("eGra");
+    expect(r.fixes).toEqual(['marcar "Origem do Negócio" como "Afiliado" (hoje: Passivo [ação do contato])']);
+  });
+
+  it("sem expedição compatível: ignorado, sem pendência", () => {
+    const d = naoSinalizado({ legs: [{ city: "Paris", date: "2026-08-01" }], end_date: "2026-08-10" });
+    const l = new Ledger([d], [partner], [madrid], [ana]);
+    expect(l.resolved[0].suggested).toBeNull();
+    expect(l.resolved[0].needsReview).toBe(false);
+    expect(l.pendingFor(madrid)).toBe(0);
+  });
+
+  it("conferido pela Vay deixa de ser pendência", () => {
+    const l = new Ledger([naoSinalizado({ reviewed: true })], [partner], [madrid], [ana]);
+    expect(l.pendingFor(madrid)).toBe(0);
+    expect(l.unsignaledFor(madrid).length).toBe(1);
   });
 });
 

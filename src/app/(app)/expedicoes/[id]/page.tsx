@@ -7,7 +7,7 @@ import { dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching"
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
-import { ClientTools, DealActions, FollowUpForm, NewDealForm } from "./forms";
+import { ClientTools, DealActions, FollowUpForm, NewDealForm, ReviewToggle } from "./forms";
 
 export const metadata = { title: "Expedição" };
 
@@ -67,12 +67,15 @@ export default async function ExpeditionPage({
   const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
 
   const expDeals = ledger.resolved
+    .filter((r) => r.deal.signaled !== false)
     .filter((r) => (r.exp && r.exp.id === exp.id) || (!r.exp && r.partner?.id === exp.partner_id))
     .sort(
       (a, b) =>
         Number(b.needsReview) - Number(a.needsReview) || (a.deal.closed_on < b.deal.closed_on ? 1 : -1),
     );
   const pending = ledger.pendingFor(exp);
+  const unsignaled = isVay ? ledger.unsignaledFor(exp) : [];
+  const portal = process.env.HUBSPOT_PORTAL_ID ?? "44656712";
   const partnerExps = world.exps.filter((e) => e.partner_id === exp.partner_id);
   const assignOptions = [
     { value: "auto", label: "Atribuição automática" },
@@ -316,6 +319,61 @@ export default async function ExpeditionPage({
                   canReview={r.flags.length > 0 && !d.reviewed}
                   reviewed={d.reviewed}
                 />
+              </div>
+            );
+          })}
+        </section>
+      ) : null}
+
+      {isVay && unsignaled.length ? (
+        <section className="card pad stack" id="nao-sinalizados" style={{ borderColor: "var(--red-300)" }}>
+          <div className="ttl">
+            <h2 className="section-title">Encontrados, mas não sinalizados no HubSpot</h2>
+            <Tip>
+              Negócios fechados com destino e datas compatíveis com esta expedição, mas sem a marcação de agência
+              parceira no HubSpot. Não geram comissão até serem corrigidos lá; na próxima sincronização eles passam
+              para a lista acima. Só a equipe Vay Agora vê esta seção.
+            </Tip>
+            <Badge tone="red">{unsignaled.length}</Badge>
+          </div>
+          {unsignaled.map((r) => {
+            const d = r.deal;
+            const prods = PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`);
+            return (
+              <div key={d.id} className={`deal${r.needsReview ? " review" : ""}`}>
+                <div className="top">
+                  <div className="stack" style={{ gap: 6 }}>
+                    <div className="row" style={{ gap: 8 }}>
+                      <span className="strong">Negócio {dealNo(d)}</span>
+                      {r.listEvidence ? (
+                        <Badge tone="yellow">Passageiro na lista do parceiro</Badge>
+                      ) : (
+                        <Badge tone="neutral">Só destino e data</Badge>
+                      )}
+                      {d.reviewed ? <Badge tone="success">Conferido</Badge> : null}
+                    </div>
+                    {d.name ? <span className="small">{d.name}</span> : null}
+                    <span className="small">{sortPassengers(d.passengers).map((p) => p.name).join(" · ") || "Sem contatos associados"}</span>
+                    <span className="small">
+                      {d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta {fmtDate(d.end_date)}
+                    </span>
+                    <span className="small muted">Fechado em {fmtDate(d.closed_on)} · {prods.join(" · ")}</span>
+                    <span className="small muted">{r.reason}</span>
+                    <span className="small">
+                      <strong>Para corrigir no HubSpot:</strong> {r.fixes.join("; ")}.{" "}
+                      {d.hubspot_id ? (
+                        <a href={`https://app.hubspot.com/contacts/${portal}/record/0-3/${d.hubspot_id}`} target="_blank" rel="noreferrer">
+                          Abrir no HubSpot
+                        </a>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="com">
+                    <strong>{brl(r.potential.total)}</strong>
+                    <span className="small muted">Comissão se for sinalizado</span>
+                  </div>
+                </div>
+                <ReviewToggle dealId={d.id} reviewed={d.reviewed} />
               </div>
             );
           })}
