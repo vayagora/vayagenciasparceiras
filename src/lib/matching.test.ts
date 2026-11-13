@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Ledger, shownStage } from "./ledger";
-import { dealNo, resolveDeals, samePerson } from "./matching";
+import { calculatedCashback, dealNo, resolveDeals, samePerson } from "./matching";
+import { paymentKind } from "./commission";
 import type { Client, Deal, Expedition, Partner, Passenger } from "./types";
 
 // ---------------------------------------------------------------- Fixtures
@@ -26,6 +27,8 @@ function deal(over: Partial<Deal> & { passengers?: Passenger[] } = {}): Deal {
     hs_origem: "Afiliado",
     hs_agency: "Horizonte Eventos",
     details: {},
+    payment_methods: ["Pix/Ted/Doc"],
+    cashback_override: null,
     afiliado: "Horizonte Eventos",
     closed_on: "2026-09-01",
     legs: [{ city: "Madrid", date: "2026-11-12" }],
@@ -184,14 +187,20 @@ describe("negócios com vários passageiros", () => {
     expect(l.resolved[0].flags).toEqual([]);
   });
 
-  it("só o titular cadastrado: sem 'fora da lista'; Vay vê o acompanhante como não cadastrado", () => {
+  it("só o titular cadastrado: sem 'fora da lista'; acompanhante fora da expedição é inconsistência (SPEC 1.3)", () => {
     const l = new Ledger([casal()], [partner], [madrid], [emerson]);
     const r = l.resolved[0];
-    expect(flagKeys(r)).toEqual(["passageiro"]);
-    expect(r.needsReview).toBe(false); // informativa, não gera pendência
+    expect(flagKeys(r)).toEqual(["acompanhante"]);
+    expect(r.needsReview).toBe(true); // vai para conferência: separar o negócio no HubSpot
+    expect(r.com.total).toBeCloseTo(450); // remunera até a Vay corrigir ou ajustar o cashback
     const line = l.clientLine(emerson);
     expect(line.unregistered.map((u) => u.passenger.name)).toEqual(["Gislaine"]);
     expect(line.hiddenPassengers).toBe(1);
+    expect(l.pendingFor(madrid)).toBe(1);
+  });
+
+  it("conferido pela Vay, a inconsistência deixa de ser pendência", () => {
+    const l = new Ledger([{ ...casal(), reviewed: true }], [partner], [madrid], [emerson]);
     expect(l.pendingFor(madrid)).toBe(0);
   });
 
@@ -209,7 +218,7 @@ describe("negócios com vários passageiros", () => {
 
   it("titular não cadastrado, acompanhante cadastrado: sem 'fora da lista'; valores na linha do acompanhante", () => {
     const l = new Ledger([casal()], [partner], [madrid], [gislaine]);
-    expect(flagKeys(l.resolved[0])).toEqual(["passageiro"]);
+    expect(flagKeys(l.resolved[0])).toEqual(["acompanhante"]);
     const line = l.clientLine(gislaine);
     expect(line.primary.length).toBe(1);
     expect(line.values).toEqual({ voo: 8000, hotel: 6000, seguro: 600 });
@@ -358,6 +367,83 @@ describe("etapa exibida", () => {
   it("negócio em aberto → em negociação; nada → não contactado", () => {
     expect(shownStage({ stage: "auto", hs_status: "negociacao" }, false)).toBe("negociacao");
     expect(shownStage({ stage: "auto", hs_status: null }, false)).toBe("novo");
+  });
+});
+
+// ---------------------------------------------------------------- Forma de pagamento e cashback (SPEC 1.3)
+
+describe("forma de pagamento e cashback", () => {
+  const ana = client("Ana", "2026-10-01");
+  const resolve = (over: Partial<Deal>) => new Ledger([deal(over)], [partner], [madrid], [ana]);
+
+  it("pago com dinheiro (cartão, Pix…): cashback normal", () => {
+    const l = resolve({ payment_methods: ["Pagar.me"] });
+    expect(l.resolved[0].com.total).toBeCloseTo(450);
+    expect(l.resolved[0].flags).toEqual([]);
+  });
+
+  it("100% Crédito na VAY: entra no sistema, sem cashback, sem pendência", () => {
+    const l = resolve({ payment_methods: ["Crédito na VAY"] });
+    const r = l.resolved[0];
+    expect(r.exp?.id).toBe("eMad");
+    expect(r.com.total).toBe(0);
+    expect(r.com.sold).toBe(14600);
+    expect(flagKeys(r)).toEqual(["credito"]);
+    expect(r.needsReview).toBe(false);
+    expect(l.expStats(madrid).deals).toBe(1);
+  });
+
+  it("pagamento misto: cashback a definir (R$ 0) e pendência", () => {
+    const l = resolve({ payment_methods: ["Crédito na VAY", "Pix/Ted/Doc"] });
+    expect(l.resolved[0].com.total).toBe(0);
+    expect(flagKeys(l.resolved[0])).toEqual(["misto"]);
+    expect(l.pendingFor(madrid)).toBe(1);
+  });
+
+  it("cashback editado pela Vay: vale o valor editado, dividido entre os produtos, e resolve o misto", () => {
+    const l = resolve({ payment_methods: ["Crédito na VAY", "Pix/Ted/Doc"], cashback_override: 200 });
+    const r = l.resolved[0];
+    expect(r.com.total).toBe(200);
+    expect(r.com.voo + r.com.hotel + r.com.seguro).toBeCloseTo(200);
+    expect(r.com.voo).toBeCloseTo((240 / 450) * 200);
+    expect(flagKeys(r)).toEqual(["ajustado"]);
+    expect(l.pendingFor(madrid)).toBe(0);
+  });
+
+  it("cashback editado vale também com pagamento só em crédito (ex.: acordo pontual)", () => {
+    const r = resolve({ payment_methods: ["Crédito na VAY"], cashback_override: 50 }).resolved[0];
+    expect(r.com.total).toBe(50);
+  });
+
+  it("valor calculado (para o histórico) ignora a edição", () => {
+    expect(calculatedCashback(deal({ cashback_override: 10 }))).toBeCloseTo(450);
+    expect(calculatedCashback(deal({ payment_methods: ["Crédito na VAY"] }))).toBe(0);
+  });
+
+  it("forma de pagamento", () => {
+    expect(paymentKind([])).toBe("dinheiro");
+    expect(paymentKind(["crédito na vay"])).toBe("credito");
+    expect(paymentKind(["Crédito na VAY", "Boleto"])).toBe("misto");
+  });
+});
+
+describe("cliente recorrente (SPEC 1.3)", () => {
+  it("o mesmo cliente em duas expedições da agência: as duas compras remuneram", () => {
+    const lisboa: Expedition = { ...madrid, id: "eLis", city: "Lisboa", start_date: "2027-05-10", days: 5 };
+    const ana1 = client("Ana", "2026-10-01");
+    const ana2 = { ...client("Ana", "2026-10-02", lisboa), id: "c-Ana-2" };
+    const d1 = deal();
+    const d2 = deal({ legs: [{ city: "Lisboa", date: "2027-05-09" }], end_date: "2027-05-15" });
+    const l = new Ledger([d1, d2], [partner], [madrid, lisboa], [ana1, ana2]);
+    expect(l.paid.map((r) => r.exp?.id).sort()).toEqual(["eLis", "eMad"]);
+    expect(l.paid.every((r) => r.com.total > 0)).toBe(true);
+  });
+
+  it("nova compra do mesmo cliente fora das expedições da agência não remunera", () => {
+    const d = deal({ legs: [{ city: "Paris", date: "2027-08-01" }], end_date: "2027-08-10" });
+    const [r] = resolveDeals([d], [partner], [madrid], [client("Ana", "2026-10-01")]);
+    expect(r.exp).toBeNull();
+    expect(r.com.total).toBe(0);
   });
 });
 

@@ -126,6 +126,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0004_saldo_etapas_anexos.sql"));
     await db.query(sql("0005_anexos_storage.sql"));
     await db.query(sql("0006_acordo.sql"));
+    await db.query(sql("0007_pagamento_cashback.sql"));
     await db.query(GRANTS);
   });
 
@@ -268,6 +269,18 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     });
   });
 
+  it("histórico do cashback: só a Vay lê e grava; o parceiro vê só o valor final do próprio negócio", async () => {
+    await db.query(`update deals set cashback_override = 120, payment_methods = '{"Crédito na VAY","Pix/Ted/Doc"}' where id = $1`, [ID.dealA]);
+    await db.query(`insert into deal_cashback_history (deal_id, old_value, new_value, calculated, note) values ($1, null, 120, 0, 'misto')`, [ID.dealA]);
+    await as(ID.pa, async () => {
+      expect(await rows(`select id from deal_cashback_history`)).toEqual([]);
+      await denied(`insert into deal_cashback_history (deal_id, new_value, calculated) values ($1, 999, 0)`, [ID.dealA]);
+      expect(await rows(`select cashback_override::float as v from deals where id = $1`, [ID.dealA])).toEqual([{ v: 120 }]);
+      await expect(db.query(`update deals set cashback_override = 999 where id = $1`, [ID.dealA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+    expect(await as(ID.vay, () => rows(`select note from deal_cashback_history`))).toEqual([{ note: "misto" }]);
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
@@ -275,6 +288,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0003_nao_sinalizados.sql"));
     await db.query(sql("0004_saldo_etapas_anexos.sql"));
     await db.query(sql("0006_acordo.sql"));
+    await db.query(sql("0007_pagamento_cashback.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

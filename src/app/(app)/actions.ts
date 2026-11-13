@@ -8,6 +8,7 @@ import { cityOf } from "@/lib/cities";
 import { parseRows, type ClientRow } from "@/lib/csv";
 import { requireSession, requireVay } from "@/lib/data";
 import { dayNum, digits, lower, plural, todayIso } from "@/lib/format";
+import { calculatedCashback } from "@/lib/matching";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
 import type { Leg } from "@/lib/types";
@@ -144,6 +145,47 @@ export async function saveFollowUp(clientId: string, _: FormState, f: FormData):
   if (error) return { error: "Não foi possível salvar." };
   revalidatePath("/", "layout");
   return { ok: "Salvo. O parceiro já vê a etapa atualizada." };
+}
+
+// ---------------------------------------------------------------- Cashback editado pela Vay (SPEC 1.3)
+
+// value null = volta ao calculado pelas regras. Toda alteração vai para o histórico.
+export async function setCashback(dealId: string, raw: string | null, note: string): Promise<FormState> {
+  const s = await requireVay();
+  let value: number | null = null;
+  if (raw !== null && raw.trim() !== "") {
+    const v = raw.replace(/[R$\s]/g, "");
+    value = Math.round((Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v) || NaN) * 100) / 100;
+    if (!(value >= 0)) return { error: "Informe um valor válido (0 ou mais)." };
+  }
+  const supabase = await createClient();
+  const { data: d, error: rErr } = await supabase.from("deals").select("*").eq("id", dealId).single();
+  if (rErr || !d) return { error: "Negócio não encontrado." };
+  const old = d.cashback_override === null ? null : Number(d.cashback_override);
+  if (old === value) return { ok: "Nada mudou." };
+  const calculated = calculatedCashback({
+    ...d,
+    voo: Number(d.voo),
+    hotel: Number(d.hotel),
+    seguro: Number(d.seguro),
+    payment_methods: d.payment_methods ?? [],
+    cashback_override: null,
+    passengers: [],
+  });
+  const { error: hErr } = await supabase.from("deal_cashback_history").insert({
+    deal_id: dealId,
+    old_value: old,
+    new_value: value,
+    calculated: Math.round(calculated * 100) / 100,
+    note: note.trim(),
+    changed_by: s.profile.id,
+    changed_by_name: s.profile.full_name || s.profile.email,
+  });
+  if (hErr) return { error: "Não foi possível registrar a alteração." };
+  const { error } = await supabase.from("deals").update({ cashback_override: value }).eq("id", dealId);
+  if (error) return { error: "Não foi possível salvar o cashback." };
+  revalidatePath("/", "layout");
+  return { ok: value === null ? "Voltou ao cashback calculado." : "Cashback atualizado." };
 }
 
 // ---------------------------------------------------------------- Saldo (extrato)

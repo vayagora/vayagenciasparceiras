@@ -39,6 +39,14 @@ Cada negócio vende um serviço (campo **Serviço**, `servico`). O valor é o **
 | Seguro Viagem | seguro | 5% |
 | Outros (Pacote, Transfer, Passeio…) | — | não entram (aparecem como ignorados na sincronização) |
 
+## Forma de pagamento
+
+Campo **"Forma de pagamento do cliente"** (`forma_de_pagamento`; várias opções vêm separadas por `;`):
+
+- só "Crédito na VAY" → o negócio entra, mas sem cashback;
+- "Crédito na VAY" + outra forma → pagamento misto: cashback a definir pela Vay (pendência);
+- qualquer outra forma, ou vazio → cashback normal.
+
 ## Roteiro (destino + datas)
 
 | Serviço | Destino | Datas |

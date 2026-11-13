@@ -3,12 +3,13 @@ import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { expEnd, expStatus, PRODUCTS, stageOf, type Product, type Tone } from "@/lib/commission";
 import type { ClientLine } from "@/lib/ledger";
-import { dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
+import { calculatedCashback, dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
 import { ClientTools, DealActions, FollowUpForm, NewDealForm, ReviewToggle } from "./forms";
+import { CashbackEditor } from "./CashbackEditor";
 import { ProductCell, type ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
@@ -291,6 +292,7 @@ export default async function ExpeditionPage({
                       {d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta {fmtDate(d.end_date)}
                     </span>
                     <span className="small muted">Fechado em {fmtDate(d.closed_on)} · {prods.join(" · ")}</span>
+                    <span className="small muted">Pagamento: {d.payment_methods.length ? d.payment_methods.join(" + ") : "não informado no HubSpot"}</span>
                     <span className="small muted">
                       {r.reason}
                       {others.length ? ` Outras expedições compatíveis: ${others.join(", ")}.` : ""}
@@ -298,7 +300,7 @@ export default async function ExpeditionPage({
                   </div>
                   <div className="com">
                     <strong>{brl(r.com.total)}</strong>
-                    <span className="small muted">{r.exp ? "Comissão do parceiro" : "Sem expedição · não remunera"}</span>
+                    <span className="small muted">{r.exp ? (r.flags.some((f) => f.key === "misto") ? "Cashback a definir" : "Cashback do parceiro") : "Sem expedição · não remunera"}</span>
                   </div>
                 </div>
                 <DealActions
@@ -307,9 +309,21 @@ export default async function ExpeditionPage({
                   value={d.override_none ? "none" : d.override_expedition_id ?? "auto"}
                   options={assignOptions}
                   canLinkHere={!r.exp}
-                  canReview={r.flags.length > 0 && !d.reviewed}
+                  canReview={r.needsReview}
                   reviewed={d.reviewed}
                 />
+                {r.exp ? (
+                  <div className="row">
+                    <CashbackEditor
+                      dealId={d.id}
+                      dealNo={dealNo(d)}
+                      current={r.com.total}
+                      calculated={calculatedCashback(d)}
+                      override={d.cashback_override}
+                      history={world.cashbackHistory.filter((h) => h.deal_id === d.id)}
+                    />
+                  </div>
+                ) : null}
               </div>
             );
           })}

@@ -5,6 +5,8 @@ import {
   dealContacts,
   findContacts,
   matchPartner,
+  paymentMethods,
+  FIELDS,
   readContactObs,
   readLegsAny,
   searchOpenDealsInWindow,
@@ -74,6 +76,7 @@ export type DealRow = {
   hotel: number;
   seguro: number;
   details: DealDetails;
+  payment_methods: string[];
 };
 
 // Sinalizado: afiliado = agência associada (parceiro). Não sinalizado: afiliado vazio (só a Vay vê),
@@ -105,6 +108,7 @@ export function mapDeal(
       hotel: trip.product === "hotel" ? trip.value : 0,
       seguro: trip.product === "seguro" ? trip.value : 0,
       details: trip.details,
+      payment_methods: paymentMethods(p[FIELDS.payment]),
     },
   };
 }

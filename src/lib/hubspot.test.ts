@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
-import { airportShort, phoneVariants, readDetails, readLegsAny, toTime } from "./hubspot";
+import { airportShort, paymentMethods, phoneVariants, readDetails, readLegsAny, toTime } from "./hubspot";
 import { airportPlace, hubspotConfig, matchPartner, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
 import { clientHubspotStatus, linkContact, mapDeal, matchesSomeExpedition, planPassengers, type StatusDeal } from "./sync";
 import type { Expedition } from "./types";
@@ -159,6 +159,13 @@ describe("conversões do negócio", () => {
     expect(r).toMatchObject({
       row: { hubspot_id: "61129597452", afiliado: "JT Viajar e Correr", closed_on: "2026-07-20", voo: 23570, hotel: 0, seguro: 0, end_date: "2026-12-19" },
     });
+  });
+
+  it("forma de pagamento: várias opções separadas por ';'", () => {
+    expect(paymentMethods("Pix/Ted/Doc;Crédito na VAY")).toEqual(["Pix/Ted/Doc", "Crédito na VAY"]);
+    expect(paymentMethods(null)).toEqual([]);
+    const r = mapDeal({ id: "1", properties: { ...aereo, forma_de_pagamento: "Crédito na VAY" } }, "JT Viajar e Correr");
+    expect(r).toMatchObject({ row: { payment_methods: ["Crédito na VAY"] } });
   });
 
   it("mapDeal: sem empresa associada é ignorado", () => {

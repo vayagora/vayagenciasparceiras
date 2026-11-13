@@ -14,7 +14,9 @@ Leia `docs/SPEC.md` antes de qualquer tarefa. Ela é a fonte da verdade das regr
 1. Parceiro só acessa dados da própria empresa. Garantido por RLS no banco; toda tabela nova com dado de parceiro precisa de política RLS + teste.
 2. Comissão só existe para negócio vinculado a uma expedição: passagem aérea 3%, hospedagem 3%, seguro 5% (`src/lib/commission.ts`; acordo "Regras de Negócio Padrões", item 4.1). Paga em créditos: saldo = comissões + entradas − saídas (`src/lib/balance.ts`).
 3. Vínculo = afiliado + data + destino, com tolerâncias (`src/lib/matching.ts`). Qualquer mudança nele exige teste em `src/lib/matching.test.ts`.
-4. Cliente fora da lista do parceiro: remunera e sinaliza. Nenhuma expedição: não remunera e sinaliza. Basta um passageiro do negócio estar na lista para não ser "fora da lista".
+4. Cliente fora da lista do parceiro: remunera e sinaliza. Nenhuma expedição: não remunera e sinaliza. Basta um passageiro do negócio estar na lista para não ser "fora da lista"; se outro passageiro não estiver, é inconsistência (acompanhante fora da expedição) e vai para conferência.
+5a. Toda compra ligada a uma expedição da agência remunera, mesmo de cliente recorrente; compra fora das expedições da agência nunca remunera.
+5b. Forma de pagamento: dinheiro gera cashback; 100% "Crédito na VAY" não gera; misto fica a definir (R$ 0) e pendente até a Vay editar o cashback. Cashback editado substitui o calculado e toda edição vai para o histórico (`deal_cashback_history`).
 5. O parceiro nunca vê `hubspot_status`, sinalizações nem dados de clientes que não cadastrou (inclusive passageiros de um negócio que ele não cadastrou).
 6. Fuso de referência America/Sao_Paulo (`src/lib/format.ts`: `todayIso`, trimestres). Painel do parceiro abre no último trimestre concluído.
 7. Período fechado nunca é reescrito.

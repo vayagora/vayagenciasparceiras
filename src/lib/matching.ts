@@ -2,7 +2,7 @@
 // Qualquer mudança aqui exige teste em matching.test.ts.
 import { AIRPORTS } from "./airports";
 import { cityOf, kmBetween } from "./cities";
-import { dealCom, ZERO, type Money, type Tone } from "./commission";
+import { dealCom, paymentKind, withCashback, ZERO, type Money, type Tone } from "./commission";
 import { dayNum, digits, dm, lower } from "./format";
 import type { Client, Deal, Expedition, Partner, Passenger } from "./types";
 
@@ -95,11 +95,13 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedi
 
 // ---------------------------------------------------------------- Resolução
 
-export type FlagKey = "aprox" | "multi" | "nenhuma" | "fora" | "passageiro" | "titular" | "nao_sinalizado";
+export type FlagKey =
+  | "aprox" | "multi" | "nenhuma" | "fora" | "acompanhante" | "titular" | "nao_sinalizado"
+  | "credito" | "misto" | "ajustado";
 export type Flag = { key: FlagKey; label: string; tone: Tone };
 
 // Sinalizações informativas não geram pendência de conferência.
-const INFORMATIVE: FlagKey[] = ["passageiro"];
+const INFORMATIVE: FlagKey[] = ["credito", "ajustado"];
 
 export type Registered = { passenger: Passenger; client: Client };
 
@@ -176,6 +178,25 @@ export function linkPassengers(deal: Deal, expClients: Client[]) {
   };
 }
 
+// Cashback do negócio (SPEC 1.3): editado pela Vay > forma de pagamento > regras de comissão.
+export function cashback(d: Deal): { com: Money; flags: Flag[] } {
+  const calc = dealCom(d);
+  const kind = paymentKind(d.payment_methods);
+  if (d.cashback_override !== null && d.cashback_override !== undefined) {
+    return { com: withCashback(calc, Number(d.cashback_override), d), flags: [{ key: "ajustado", label: "Cashback ajustado", tone: "purple" }] };
+  }
+  if (kind === "credito")
+    return { com: { ...ZERO, sold: calc.sold }, flags: [{ key: "credito", label: "Pago com créditos · sem cashback", tone: "neutral" }] };
+  if (kind === "misto")
+    return { com: { ...ZERO, sold: calc.sold }, flags: [{ key: "misto", label: "Pagamento misto · definir cashback", tone: "yellow" }] };
+  return { com: calc, flags: [] };
+}
+
+// Cashback calculado pelas regras, sem a edição da Vay (para o histórico e o modal de edição).
+export function calculatedCashback(d: Deal): number {
+  return cashback({ ...d, cashback_override: null }).com.total;
+}
+
 export function resolveDeals(
   deals: Deal[],
   partners: Partner[],
@@ -222,7 +243,7 @@ export function resolveDeals(
         r.partner = owner;
         r.suggested = best.e;
         r.reason = best.m.reason;
-        r.potential = dealCom(d);
+        r.potential = cashback(d).com;
         r.listEvidence = (d.passengers ?? []).some((p) =>
           expClients.some((c) => samePerson(c, p) || sameName(c.name, p.name)),
         );
@@ -273,8 +294,11 @@ export function resolveDeals(
       if (r.registered.length === 0)
         r.flags.push({ key: "fora", label: "Cliente fora da lista do parceiro", tone: "yellow" });
       else if (r.unregisteredCount > 0)
-        r.flags.push({ key: "passageiro", label: "Passageiro não cadastrado", tone: "neutral" });
-      r.com = dealCom(d);
+        // SPEC 1.3: acompanhante que não está na expedição deveria estar em outro negócio.
+        r.flags.push({ key: "acompanhante", label: "Acompanhante fora da expedição", tone: "yellow" });
+      const c = cashback(d);
+      r.com = c.com;
+      r.flags.push(...c.flags);
     }
     if (d.titular_labeled === false)
       r.flags.push({ key: "titular", label: "Titular não definido", tone: "yellow" });

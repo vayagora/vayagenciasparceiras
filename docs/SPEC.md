@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.2 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.3 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.3:** (1) cliente recorrente: toda compra ligada a uma expedição da agência remunera, mesmo que não seja a primeira compra do cliente; compras fora das expedições da agência não remuneram. (2) acompanhante que não está na expedição deve ir num negócio separado; negócio que mistura passageiro da expedição com acompanhante fora dela é apontado como inconsistência. (3) forma de pagamento: dinheiro gera cashback; 100% "Crédito na VAY" entra no sistema sem cashback; pagamento misto vai para conferência e a Vay define o cashback final, com histórico de alterações. Afeta §1, §4.4, §4.5, §5 e §6.
 
 **Mudanças na 1.2:** passagem aérea passa a 3% (acordo, item 4.1); saldo e extrato de créditos; etapa do cliente
 pelo HubSpot (não contactado · em negociação · compra concluída) + marcações manuais da Vay; modal de voo,
@@ -22,6 +24,17 @@ Empresas parceiras da Vay Agora organizam **expedições** (viagens em grupo: co
 | Seguro viagem | 5% |
 
 A comissão é calculada sobre o **valor do negócio**, não por passageiro. Um negócio com dois passageiros gera uma única comissão sobre o valor total.
+
+**Quais compras remuneram (cashback):**
+
+- **Toda compra ligada a uma expedição da agência** remunera, inclusive de clientes recorrentes: se o mesmo cliente faz várias expedições com a agência, cada uma remunera, mesmo que não seja a primeira compra dele na Vay. Isto é uma exceção à regra de "primeira compra" do acordo (item 4.1).
+- Compras que **não** são de expedições da agência (ex.: o cliente volta a viajar com a Vay por conta própria) **não** remuneram.
+- Só remunera o **passageiro que está na expedição**. Acompanhante que não faz parte da expedição vai em **outro negócio** no HubSpot, sem a marcação de agência. Negócio com os dois juntos é apontado como inconsistência (§4.4).
+- **Forma de pagamento** (campo "Forma de pagamento do cliente"):
+  - pago com dinheiro (cartão, Pix, boleto, link etc.) → gera cashback;
+  - 100% "Crédito na VAY" → entra no sistema, mas **não** gera cashback (já foi um abatimento de crédito);
+  - misto (parte em crédito, parte em dinheiro) → vai para conferência; o cashback fica **a definir** (R$ 0) até a Vay informar o valor final.
+- A Vay pode **editar o cashback** de qualquer negócio; cada alteração fica no histórico (valor anterior → novo, quem, quando, motivo), visível num mini modal.
 
 A comissão é paga em **créditos na Vay Agora**, sem validade, que a agência usa para emitir qualquer serviço da Vay (acordo, item 4.2). O **saldo** é: comissões dos negócios vinculados + entradas lançadas pela Vay (ex.: bonificações) − saídas (uso dos créditos).
 
@@ -103,7 +116,10 @@ Resultado e sinalizações:
 | Compatível, mas por cidade próxima ou datas fora disso | vincula | Vínculo por aproximação |
 | Mais de uma expedição compatível | vincula à de maior pontuação | Mais de uma expedição possível |
 | **Nenhum** passageiro do negócio está na lista daquela expedição | vincula e **remunera** | Cliente fora da lista do parceiro |
-| Pelo menos um passageiro está na lista, mas outros não | vincula e **remunera** | Passageiro não cadastrado (informativa, não gera pendência) |
+| Pelo menos um passageiro está na lista, mas outros não | vincula e **remunera** | Acompanhante fora da expedição (pendência: separar o negócio no HubSpot ou ajustar o cashback) |
+| Pago 100% com "Crédito na VAY" | vincula, **sem cashback** | Pago com créditos (informativa) |
+| Pagamento misto (crédito + dinheiro), cashback ainda não definido | vincula, cashback **a definir** (R$ 0) | Pagamento misto (pendência até a Vay definir o cashback) |
+| Cashback editado pela Vay | vale o valor editado | Cashback ajustado (informativa, com histórico) |
 | Negócio sem rótulo "Titular" em nenhum contato | vincula normalmente | Titular não definido |
 | Nenhuma compatível | não vincula, **não remunera** | Nenhuma expedição encontrada |
 
@@ -120,7 +136,9 @@ Seção "Negócios do HubSpot" na tela de cada expedição:
 - ações: trocar expedição (automática / outra expedição do parceiro / sem expedição), "Vincular a esta expedição", "Marcar como conferido" / desfazer;
 - todo ajuste manual fica registrado (quem, quando, de → para).
 
-Pendências (sinalizados e não conferidos) aparecem: no card da expedição, na Visão geral (lista de expedições com pendência). A sinalização "Passageiro não cadastrado" não conta como pendência.
+- ação "Editar cashback": valor final + motivo; o histórico de alterações abre num mini modal.
+
+Pendências (sinalizados e não conferidos) aparecem: no card da expedição, na Visão geral (lista de expedições com pendência). "Pago com créditos" e "Cashback ajustado" não contam como pendência; "Pagamento misto" deixa de ser pendência quando a Vay define o cashback.
 
 ### 4.6 Follow-up (perfil Vay)
 Por cliente: etapa e nota. Salvar grava a data (fuso America/Sao_Paulo). Compras e valores não são editados aqui: vêm do HubSpot.
@@ -163,6 +181,7 @@ Textos de apoio ficam em tooltips (ícone "i").
 - App privado com escopos de leitura: negócios, contatos e empresas. Mapeamento dos campos em `docs/HUBSPOT.md`.
 - **Negócio de agência parceira:** etapa "Emissão Realizada" + "Origem do Negócio" = "Afiliado" + a agência associada como **Empresa** do negócio (nome igual ao do parceiro no sistema).
 - **Não sinalizados:** a sincronização também lê os negócios ganhos com viagem perto das expedições; os que combinam por destino e data mas não estão sinalizados ficam visíveis só para a Vay (§5) e não remuneram até serem corrigidos no HubSpot.
+- **Forma de pagamento:** campo "Forma de pagamento do cliente" (`forma_de_pagamento`); a opção "Crédito na VAY" indica abatimento de crédito.
 - **Produto e valor:** campo "Serviço" (Aéreo → passagem, Hospedagem, Seguro Viagem; outros serviços não remuneram) e "Valor do negócio".
 - **Roteiro:** trechos 1–6 (aeroporto de destino + data) no aéreo; cidade + check-in/out na hospedagem; destino + vigência no seguro. Aeroportos viram coordenadas pela tabela `src/lib/airports.ts`.
 - **Passageiros:** para cada negócio, ler as associações negócio → contatos (API de associações v4), com os rótulos de associação, e buscar nome, e-mail e telefone dos contatos em lote. O rótulo "Titular" (nome configurável por variável de ambiente) define o titular. Mudança nas associações de um negócio já sincronizado atualiza os passageiros na próxima sincronização.
@@ -172,7 +191,7 @@ Textos de apoio ficam em tooltips (ícone "i").
 ## 7. Regras gerais
 
 - Fuso de referência: America/Sao_Paulo (UTC−3) para "hoje", trimestres e expedições finalizadas.
-- Moeda BRL, formato pt-BR. Comissão calculada sobre o valor de cada produto do negócio, **uma vez por negócio**, independentemente do número de passageiros.
+- Moeda BRL, formato pt-BR. Comissão calculada sobre o valor de cada produto do negócio, **uma vez por negócio**, independentemente do número de passageiros. O cashback editado pela Vay substitui o calculado.
 - Fechamento trimestral congela valores; alterações posteriores no HubSpot geram ajuste no período seguinte, nunca reescrevem período fechado.
 - LGPD: aceite do termo de compartilhamento de dados no primeiro acesso do parceiro; log de acesso/alteração.
 - Linguagem: "Vay Agora" sempre assim; tom do design system (você / a gente).

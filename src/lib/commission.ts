@@ -43,6 +43,28 @@ export function addMoney(a: Money, b: Money): Money {
   };
 }
 
+// ---------------------------------------------------------------- Forma de pagamento (SPEC 1.3)
+
+export const CREDIT_METHOD = "Crédito na VAY";
+export type PaymentKind = "dinheiro" | "credito" | "misto";
+
+// Só "Crédito na VAY" → crédito (sem cashback); crédito + outra forma → misto (a Vay define); senão, dinheiro.
+export function paymentKind(methods: string[] | null | undefined): PaymentKind {
+  const ms = (methods ?? []).map((m) => m.trim()).filter(Boolean);
+  const credit = ms.some((m) => m.toLowerCase() === CREDIT_METHOD.toLowerCase());
+  if (!credit) return "dinheiro";
+  return ms.length === 1 || ms.every((m) => m.toLowerCase() === CREDIT_METHOD.toLowerCase()) ? "credito" : "misto";
+}
+
+// Cashback final: o editado pela Vay distribui-se entre os produtos na proporção do calculado
+// (ou do valor vendido, se o calculado for zero), para os totais por produto continuarem coerentes.
+export function withCashback(calc: Money, value: number, d: Pick<Deal, "voo" | "hotel" | "seguro">): Money {
+  const base = calc.total > 0 ? calc : { voo: Number(d.voo) || 0, hotel: Number(d.hotel) || 0, seguro: Number(d.seguro) || 0, total: 0 };
+  const sum = base.total > 0 ? base.total : base.voo + base.hotel + base.seguro;
+  const share = (k: "voo" | "hotel" | "seguro") => (sum > 0 ? (base[k] / sum) * value : k === "voo" ? value : 0);
+  return { voo: share("voo"), hotel: share("hotel"), seguro: share("seguro"), total: value, sold: calc.sold };
+}
+
 export function dealCom(d: Pick<Deal, "voo" | "hotel" | "seguro">): Money {
   const voo = Number(d.voo) || 0;
   const hotel = Number(d.hotel) || 0;

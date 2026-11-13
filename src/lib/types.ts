@@ -86,6 +86,10 @@ export type Deal = {
   hs_agency: string;
   // Detalhes do produto no HubSpot (trechos, hotel, seguro) para o modal
   details: DealDetails;
+  // "Forma de pagamento do cliente" no HubSpot
+  payment_methods: string[];
+  // Cashback final definido pela Vay; null = calculado pelas regras
+  cashback_override: number | null;
   afiliado: string;
   closed_on: string;
   legs: Leg[];
@@ -128,6 +132,17 @@ export type DealNote = {
   file_name: string | null;
   created_by_name: string;
   created_at: string;
+};
+
+export type CashbackChange = {
+  id: string;
+  deal_id: string;
+  old_value: number | null;
+  new_value: number | null;
+  calculated: number;
+  note: string;
+  changed_by_name: string;
+  changed_at: string;
 };
 
 export type BalanceEntry = {

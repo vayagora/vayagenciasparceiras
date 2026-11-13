@@ -41,6 +41,7 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
 // Os nomes internos de alguns trechos não batem com o rótulo: vale o rótulo.
 export const FIELDS = {
   servico: "servico", // Serviço: o que está sendo comercializado
+  payment: "forma_de_pagamento", // Forma de pagamento do cliente (várias opções separadas por ";")
   amount: "amount", // Valor do negócio
   // Origem, destino, data, hora de saída, hora de chegada e companhia de cada trecho aéreo
   trechos: [
@@ -86,6 +87,7 @@ export function dealProperties(cfg: HubspotConfig): string[] {
     "dealstage",
     cfg.origemProp,
     FIELDS.servico,
+    FIELDS.payment,
     FIELDS.amount,
     ...FIELDS.trechos.flatMap((t) => Object.values(t)),
     ...Object.values(FIELDS.hotel),
@@ -138,6 +140,11 @@ function textPlace(text: string | null | undefined): Omit<Leg, "date"> | null {
   const city = normalizeCity(t);
   const c = cityOf(city);
   return c ? { city, lat: c.lat, lng: c.lng } : { city };
+}
+
+// "Pix/Ted/Doc;Crédito na VAY" → ["Pix/Ted/Doc", "Crédito na VAY"]
+export function paymentMethods(v: string | null | undefined): string[] {
+  return String(v ?? "").split(";").map((x) => x.trim()).filter(Boolean);
 }
 
 // Aeroporto para exibir: "BKK · Bangkok".

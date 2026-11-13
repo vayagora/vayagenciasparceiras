@@ -8,7 +8,7 @@ const outro: Partner = { ...jt, id: "pX", name: "Outra", afiliado: "Outra" };
 const bkk: Expedition = { id: "e1", partner_id: "pJT", name: "Tailândia 2026", city: "Tailândia", start_date: "2026-12-01", days: 15, arrival_airport: "BKK", departure_airport: "GRU", created_at: "" };
 
 const deal = (id: string, closed: string, voo: number, afiliado = "JT Viajar e Correr"): Deal => ({
-  id, hubspot_id: id, seq: 1, name: "", signaled: true, hs_origem: "Afiliado", hs_agency: afiliado, details: {},
+  id, hubspot_id: id, seq: 1, name: "", signaled: true, hs_origem: "Afiliado", hs_agency: afiliado, details: {}, payment_methods: [], cashback_override: null,
   afiliado, closed_on: closed, legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16",
   voo, hotel: 0, seguro: 0, override_expedition_id: null, override_none: false, reviewed: false,
   passenger_count: 1, titular_labeled: true, passengers: [],
