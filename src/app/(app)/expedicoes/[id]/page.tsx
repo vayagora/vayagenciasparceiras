@@ -179,7 +179,6 @@ export default async function ExpeditionPage({
                     <td className="num strong">{l.primary.length ? brl(l.com.total) : l.included.length ? "—" : brl(0)}</td>
                     <td>
                       {c.partner_note ? <div style={{ maxWidth: 280, whiteSpace: "pre-wrap" }}>{c.partner_note}</div> : <span className="muted">—</span>}
-                      {isVay && c.note ? <div className="sub" style={{ maxWidth: 280 }}>Nota interna: {c.note}</div> : null}
                     </td>
                     {isVay ? (
                       <td><Link href={`/expedicoes/${exp.id}?cliente=${c.id}#follow-up`} className="btn secondary sm">Atualizar</Link></td>
