@@ -149,25 +149,69 @@ function ImportForm({ expId, onClose }: { expId: string; onClose: () => void }) 
 
 // ---------- Vay: follow-up ----------
 
-export function FollowUpForm({ expId, client }: { expId: string; client: { id: string; name: string; contact: string; stage: ManualStage; shown: string; note: string } }) {
+export type FollowUpClient = {
+  id: string;
+  name: string;
+  contact: string;
+  stage: ManualStage;
+  shown: string;
+  ownerId: string | null;
+  partnerNote: string;
+  hsNote: string;
+  locked: boolean; // já tem negócio no HubSpot: observação só pelo HubSpot
+  note: string;
+};
+
+export function FollowUpForm({ expId, client, vayUsers }: { expId: string; client: FollowUpClient; vayUsers: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState(saveFollowUp.bind(null, client.id), undefined);
   return (
     <section className="panel stack" id="follow-up">
       <div className="stack" style={{ gap: 2 }}>
-        <div className="eyebrow">Etapa do cliente</div>
+        <div className="eyebrow">Acompanhamento do contato</div>
         <div className="ttl">
           <h2 className="section-title">{client.name}</h2>
-          <Tip>A etapa vem do HubSpot: não contactado, em negociação (negócio em aberto para esta expedição) ou compra concluída. Aqui você só marca quem não deve ser contactado ou comprou em outro lugar. Compra concluída no HubSpot sempre prevalece.</Tip>
+          <Tip>
+            O status do contato é marcado aqui pela equipe Vay Agora. Quando o cliente tem um negócio no HubSpot, a etapa passa a
+            vir de lá automaticamente: em negociação ou compra concluída.
+          </Tip>
         </div>
-        <span className="small muted">{client.contact} · hoje: <strong>{client.shown}</strong></span>
+        <span className="small muted">{client.contact} · etapa hoje: <strong>{client.shown}</strong></span>
       </div>
       <form action={action} className="form">
-        <div className="field" style={{ maxWidth: 360 }}>
-          <label htmlFor="fu-stage">Marcação manual</label>
-          <select id="fu-stage" name="stage" className="select" defaultValue={client.stage}>
-            <option value="auto">Automático (pelo HubSpot)</option>
-            {STAGES.filter((s) => s.manual).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="fu-stage">Status do contato</label>
+            <select id="fu-stage" name="stage" className="select" defaultValue={client.stage}>
+              <option value="auto">Não contactado</option>
+              {STAGES.filter((s) => s.manual).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="fu-owner">Responsável</label>
+            <select id="fu-owner" name="owner_id" className="select" defaultValue={client.ownerId ?? ""}>
+              <option value="">Ninguém ainda</option>
+              {vayUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <div className="ttl">
+            <label htmlFor="fu-pnote">Observação para o parceiro (o parceiro vê)</label>
+            {client.locked ? (
+              <Tip>Este cliente já tem negócio no HubSpot. Lance a observação no campo “Observações para parceiro” do negócio: ela aparece aqui depois da sincronização.</Tip>
+            ) : null}
+          </div>
+          {client.locked ? (
+            <>
+              <div className="note">
+                {client.partnerNote ? <p style={{ whiteSpace: "pre-wrap" }}><strong>Registrada no sistema:</strong> {client.partnerNote}</p> : null}
+                <p style={{ whiteSpace: "pre-wrap" }}><strong>HubSpot:</strong> {client.hsNote || "nada lançado no negócio ainda"}</p>
+              </div>
+              <span className="small muted">Travada: o cliente já tem negócio no HubSpot. Para mudar, edite o negócio lá.</span>
+            </>
+          ) : (
+            <textarea id="fu-pnote" name="partner_note" className="textarea" defaultValue={client.partnerNote} />
+          )}
         </div>
         <div className="field">
           <label htmlFor="fu-note">Nota interna (só a Vay vê)</label>

@@ -31,11 +31,13 @@ export type ClientLine = {
   unregistered: { passenger: Passenger; deal: Resolved }[];
 };
 
-// Etapa exibida (SPEC v1.2): compra concluída no HubSpot > marcação manual da Vay > em negociação > não contactado.
+// Etapa exibida (SPEC 1.4): compra concluída no HubSpot > "não contactar"/"comprou em outro lugar" (Vay)
+// > em negociação (negócio em aberto no HubSpot) > status do contato marcado pela Vay > não contactado.
 export function shownStage(c: Pick<Client, "stage" | "hs_status">, hasLinkedDeal: boolean): StageId {
   if (hasLinkedDeal || c.hs_status === "fechado") return "fechado";
   if (c.stage === "nao_contactar" || c.stage === "outro_lugar") return c.stage;
   if (c.hs_status === "negociacao") return "negociacao";
+  if (c.stage === "tentando" || c.stage === "em_contato" || c.stage === "chamar_depois") return c.stage;
   return "novo";
 }
 

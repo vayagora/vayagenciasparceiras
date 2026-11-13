@@ -18,8 +18,12 @@ export const PROD_LABEL: Record<Product, string> = {
 
 export type Tone = "neutral" | "bluebell" | "blue" | "purple" | "red" | "yellow" | "success";
 
+// manual = status do contato que a Vay marca no sistema; os outros vêm dos negócios do HubSpot.
 export const STAGES: { id: StageId; label: string; tone: Tone; color: string; manual?: boolean }[] = [
   { id: "novo", label: "Não contactado", tone: "neutral", color: "#CBCCD6" },
+  { id: "tentando", label: "Tentando contato", tone: "bluebell", color: "#ACB4ED", manual: true },
+  { id: "em_contato", label: "Em contato", tone: "bluebell", color: "#7F8BE0", manual: true },
+  { id: "chamar_depois", label: "Chamar depois", tone: "yellow", color: "#EBD98A", manual: true },
   { id: "negociacao", label: "Em negociação", tone: "blue", color: "#0078D0" },
   { id: "fechado", label: "Compra concluída", tone: "purple", color: "#473690" },
   { id: "nao_contactar", label: "Não contactar", tone: "yellow", color: "#D8BE4A", manual: true },

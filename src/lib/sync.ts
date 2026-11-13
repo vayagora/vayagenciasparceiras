@@ -7,7 +7,6 @@ import {
   matchPartner,
   paymentMethods,
   FIELDS,
-  readContactObs,
   readLegsAny,
   searchOpenDealsInWindow,
   searchWonDealsInWindow,
@@ -121,6 +120,7 @@ export type StatusDeal = {
   legs: Leg[];
   end_date: string;
   people: { contactId: string; name: string; email: string; phone: string }[];
+  note?: string; // "Observações para parceiro" do negócio
 };
 export type StatusClient = Pick<Client, "name" | "email" | "phone" | "hubspot_contact_id">;
 
@@ -130,16 +130,19 @@ export function clientHubspotStatus(
   c: StatusClient,
   exp: Expedition,
   deals: StatusDeal[],
-): { status: "fechado" | "negociacao" | null; dealId: string | null } {
+): { status: "fechado" | "negociacao" | null; dealId: string | null; note: string } {
   const mine = deals.filter(
     (d) =>
       d.people.some((p) => samePerson(c, { hubspot_contact_id: p.contactId, email: p.email, phone: p.phone }) || sameName(c.name, p.name)) &&
       !!evalDeal(d, exp),
   );
+  // Observações de todos os negócios do cliente para a expedição (ganhos primeiro)
+  const ordered = [...mine.filter((d) => d.kind === "won"), ...mine.filter((d) => d.kind === "open")];
+  const note = [...new Set(ordered.map((d) => (d.note ?? "").trim()).filter(Boolean))].join("\n\n");
   const won = mine.find((d) => d.kind === "won");
-  if (won) return { status: "fechado", dealId: won.id };
+  if (won) return { status: "fechado", dealId: won.id, note };
   const open = mine.find((d) => d.kind === "open");
-  return open ? { status: "negociacao", dealId: open.id } : { status: null, dealId: null };
+  return open ? { status: "negociacao", dealId: open.id, note } : { status: null, dealId: null, note: "" };
 }
 
 // Cliente cadastrado ↔ contato do HubSpot: e-mail; sem e-mail, telefone.
@@ -278,7 +281,7 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
   }
 }
 
-// Liga clientes a contatos, traz "Observações para parceiro" e calcula a etapa pelo HubSpot.
+// Liga clientes a contatos, calcula a etapa pelo HubSpot e traz as "Observações para parceiro" dos negócios.
 async function syncClients(
   admin: SupabaseClient,
   cfg: NonNullable<ReturnType<typeof hubspotConfig>>,
@@ -291,15 +294,14 @@ async function syncClients(
 ) {
   const { data, error } = await admin
     .from("clients")
-    .select("id, expedition_id, name, email, phone, hubspot_contact_id, hubspot_status, hs_status, hs_deal_id, partner_note");
+    .select("id, expedition_id, name, email, phone, hubspot_contact_id, hubspot_status, hs_status, hs_deal_id, hs_note");
   if (error) throw new Error(`clientes: ${error.message}`);
-  const clients = (data ?? []) as (StatusClient & Pick<Client, "id" | "expedition_id" | "hubspot_status" | "hs_status" | "hs_deal_id" | "partner_note">)[];
+  const clients = (data ?? []) as (StatusClient & Pick<Client, "id" | "expedition_id" | "hubspot_status" | "hs_status" | "hs_deal_id" | "hs_note">)[];
   if (!clients.length) return;
 
   const unlinked = clients.filter((c) => !c.hubspot_contact_id);
   const people = unlinked.length ? await findContacts(cfg, unlinked.map((c) => c.email), unlinked.map((c) => c.phone)) : [];
   const contactOf = new Map(clients.map((c) => [c.id, c.hubspot_contact_id ?? linkContact(c, people)?.id ?? null]));
-  const obs = await readContactObs(cfg, [...contactOf.values()].filter((x): x is string => !!x));
 
   const open = from ? await searchOpenDealsInWindow(cfg, from, to) : [];
   const openAssocs = await dealContacts(cfg, open.map((d) => d.id));
@@ -312,7 +314,7 @@ async function syncClients(
         const c = cs.get(a.contactId);
         return { contactId: a.contactId, name: c?.name ?? "", email: c?.email ?? "", phone: c?.phone ?? "" };
       });
-      return [{ id: d.id, kind, legs: trip.legs, end_date: trip.end, people }];
+      return [{ id: d.id, kind, legs: trip.legs, end_date: trip.end, people, note: String(d.properties[cfg.obsProp] ?? "").trim() }];
     });
   const statusDeals = [...toStatus(won, "won", wonAssocs, wonContacts), ...toStatus(open, "open", openAssocs, openContacts)];
   const expById = new Map(exps.map((e) => [e.id, e]));
@@ -327,7 +329,7 @@ async function syncClients(
       hubspot_status: c.hubspot_status ?? (contactId ? "existente" : null),
       hs_status: st.status,
       hs_deal_id: st.dealId,
-      partner_note: contactId ? obs.get(contactId) ?? "" : c.partner_note,
+      hs_note: st.note,
     };
     const changed = (Object.keys(patch) as (keyof typeof patch)[]).some((k) => (c[k] ?? null) !== (patch[k] ?? null));
     if (!changed) continue;

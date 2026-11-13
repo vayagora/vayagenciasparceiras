@@ -32,10 +32,10 @@ export type Expedition = {
   created_at: string;
 };
 
-// Etapa exibida: vem do HubSpot (novo = não contactado · negociacao · fechado) ou da marcação manual da Vay.
-export type StageId = "novo" | "negociacao" | "fechado" | "nao_contactar" | "outro_lugar";
-// O que fica gravado em clients.stage: só a marcação manual.
-export type ManualStage = "auto" | "nao_contactar" | "outro_lugar";
+// Etapa exibida: negócios do HubSpot (negociacao, fechado) ou status do contato marcado pela Vay no sistema.
+export type StageId = "novo" | "tentando" | "em_contato" | "chamar_depois" | "negociacao" | "fechado" | "nao_contactar" | "outro_lugar";
+// O que fica gravado em clients.stage: o status do contato marcado pela Vay ("auto" = não contactado).
+export type ManualStage = "auto" | "tentando" | "em_contato" | "chamar_depois" | "nao_contactar" | "outro_lugar";
 
 export type Client = {
   id: string;
@@ -49,8 +49,13 @@ export type Client = {
   // Calculado pela sincronização: negócio compatível com a expedição em aberto ou ganho
   hs_status: "negociacao" | "fechado" | null;
   hs_deal_id: string | null;
-  // "Observações para parceiro" do contato no HubSpot
+  // Observação para o parceiro escrita pela Vay no sistema (só enquanto não há negócio no HubSpot)
   partner_note: string;
+  // "Observações para parceiro" do(s) negócio(s) no HubSpot
+  hs_note: string;
+  // Responsável da Vay pelo contato
+  owner_id: string | null;
+  owner_name: string;
   last_follow_up: string | null;
   note: string;
   created_at: string;

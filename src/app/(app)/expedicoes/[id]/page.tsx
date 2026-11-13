@@ -6,6 +6,7 @@ import type { ClientLine } from "@/lib/ledger";
 import { calculatedCashback, dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
+import { createClient } from "@/lib/supabase/server";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
 import { ClientTools, DealActions, FollowUpForm, NewDealForm, ReviewToggle } from "./forms";
@@ -13,6 +14,22 @@ import { CashbackEditor } from "./CashbackEditor";
 import { ProductCell, type ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
+
+// Observação para o parceiro: a escrita no sistema (antes do negócio) e a do HubSpot (depois).
+function Observation({ partnerNote, hsNote }: { partnerNote: string; hsNote: string }) {
+  if (!partnerNote && !hsNote) return <span className="muted">—</span>;
+  return (
+    <div className="stack" style={{ gap: 4, maxWidth: 300 }}>
+      {partnerNote ? <div style={{ whiteSpace: "pre-wrap" }}>{partnerNote}</div> : null}
+      {hsNote ? (
+        <div style={{ whiteSpace: "pre-wrap" }}>
+          {partnerNote ? <span className="sub">HubSpot · </span> : null}
+          {hsNote}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function DealNos({ deals }: { deals: Resolved[] }) {
   return <td>{deals.length ? deals.map((r) => dealNo(r.deal)).join(", ") : "—"}</td>;
@@ -40,6 +57,11 @@ export default async function ExpeditionPage({
   const editing = isVay && sp.cliente ? t.clients.find((c) => c.id === sp.cliente) : undefined;
   const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
   const notesOf = (dealId: string) => world.notes.filter((n) => n.deal_id === dealId);
+  let vayUsers: { id: string; name: string }[] = [];
+  if (isVay) {
+    const { data } = await (await createClient()).from("profiles").select("id, full_name, email").eq("role", "vay").order("full_name");
+    vayUsers = (data ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email }));
+  }
   const pd = (r: Resolved): ProductDeal => ({
     id: r.deal.id,
     no: dealNo(r.deal),
@@ -113,12 +135,17 @@ export default async function ExpeditionPage({
         <FollowUpForm
           key={editing.id}
           expId={exp.id}
+          vayUsers={vayUsers}
           client={{
             id: editing.id,
             name: editing.name,
             contact: [editing.email, editing.phone].filter(Boolean).join(" · "),
             stage: editing.stage,
             shown: stageOf(ledger.shownStage(editing)).label,
+            ownerId: editing.owner_id,
+            partnerNote: editing.partner_note,
+            hsNote: editing.hs_note,
+            locked: editing.hs_status !== null || ledger.clientDeals(editing).length > 0,
             note: editing.note,
           }}
         />
@@ -141,6 +168,7 @@ export default async function ExpeditionPage({
               <tr>
                 <th>Cliente</th>
                 <th>Etapa</th>
+                <th>Responsável</th>
                 <th>Negócio</th>
                 <th>Voo</th>
                 <th>Hospedagem</th>
@@ -174,11 +202,12 @@ export default async function ExpeditionPage({
                       ) : null}
                     </td>
                     <td><Badge tone={sg.tone} dot>{sg.label}</Badge></td>
+                    <td>{c.owner_name || <span className="muted">—</span>}</td>
                     <DealNos deals={l.deals} />
                     {cells(l.primary, l.included, l.deals.length > 0)}
                     <td className="num strong">{l.primary.length ? brl(l.com.total) : l.included.length ? "—" : brl(0)}</td>
                     <td>
-                      {c.partner_note ? <div style={{ maxWidth: 280, whiteSpace: "pre-wrap" }}>{c.partner_note}</div> : <span className="muted">—</span>}
+                      <Observation partnerNote={c.partner_note} hsNote={c.hs_note} />
                     </td>
                     {isVay ? (
                       <td><Link href={`/expedicoes/${exp.id}?cliente=${c.id}#follow-up`} className="btn secondary sm">Atualizar</Link></td>
@@ -193,6 +222,7 @@ export default async function ExpeditionPage({
                             <div style={{ marginTop: 6 }}><Badge tone="neutral">Não cadastrado pelo parceiro</Badge></div>
                           </td>
                           <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
+                          <td><span className="muted">—</span></td>
                           <DealNos deals={[r]} />
                           {cells([], [r], true)}
                           <td className="num">—</td>
@@ -219,6 +249,7 @@ export default async function ExpeditionPage({
                           <div style={{ marginTop: 6 }}><Badge tone="yellow">Fora da lista do parceiro</Badge></div>
                         </td>
                         <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
+                          <td><span className="muted">—</span></td>
                         <DealNos deals={[r]} />
                         {cells([r], [], true)}
                         <td className="num strong">{brl(r.com.total)}</td>
@@ -230,7 +261,7 @@ export default async function ExpeditionPage({
                 : null}
               {t.clients.length === 0 && (!isVay || outside.length === 0) ? (
                 <tr>
-                  <td colSpan={isVay ? 9 : 8} className="empty">
+                  <td colSpan={isVay ? 10 : 9} className="empty">
                     {isVay
                       ? "O parceiro ainda não cadastrou clientes nesta expedição."
                       : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}

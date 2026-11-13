@@ -59,6 +59,9 @@ function client(name: string, created_at: string, exp = madrid): Client {
     hs_status: null,
     hs_deal_id: null,
     partner_note: "",
+    hs_note: "",
+    owner_id: null,
+    owner_name: "",
     last_follow_up: null,
     note: "",
     created_at,
@@ -364,6 +367,14 @@ describe("etapa exibida", () => {
     expect(shownStage({ stage: "nao_contactar", hs_status: "negociacao" }, false)).toBe("nao_contactar");
     expect(shownStage({ stage: "outro_lugar", hs_status: null }, false)).toBe("outro_lugar");
   });
+  it("status do contato marcado pela Vay vale enquanto não há negócio; negócio em aberto prevalece", () => {
+    expect(shownStage({ stage: "tentando", hs_status: null }, false)).toBe("tentando");
+    expect(shownStage({ stage: "em_contato", hs_status: null }, false)).toBe("em_contato");
+    expect(shownStage({ stage: "chamar_depois", hs_status: null }, false)).toBe("chamar_depois");
+    expect(shownStage({ stage: "em_contato", hs_status: "negociacao" }, false)).toBe("negociacao");
+    expect(shownStage({ stage: "tentando", hs_status: "fechado" }, false)).toBe("fechado");
+  });
+
   it("negócio em aberto → em negociação; nada → não contactado", () => {
     expect(shownStage({ stage: "auto", hs_status: "negociacao" }, false)).toBe("negociacao");
     expect(shownStage({ stage: "auto", hs_status: null }, false)).toBe("novo");

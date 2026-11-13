@@ -23,7 +23,8 @@ Leia `docs/SPEC.md` antes de qualquer tarefa. Ela é a fonte da verdade das regr
 8. Segredos só em variáveis de ambiente (`.env.local`); nunca no código nem em logs.
 9. Valores e comissão são do negócio, não do passageiro: aparecem uma vez por negócio (linha principal) e todo total soma por negócio, nunca por linha (SPEC §5).
 10. Negócio não sinalizado no HubSpot nunca remunera nem aparece para o parceiro (RLS em `deals.signaled`).
-11. Etapa do cliente: compra concluída no HubSpot > marcação manual da Vay > em negociação > não contactado (`shownStage` em `src/lib/ledger.ts`).
+11. Etapa do cliente: compra concluída (HubSpot) > não contactar / comprou em outro lugar (Vay) > em negociação (HubSpot) > tentando / em contato / chamar depois (Vay) > não contactado (`shownStage` em `src/lib/ledger.ts`).
+12. Observação para o parceiro: escrita no sistema só enquanto o cliente não tem negócio no HubSpot (`clients.partner_note`); depois, vem do campo "Observações para parceiro" do negócio (`clients.hs_note`) e a do sistema fica travada.
 
 ## Convenções
 - Interface em pt-BR; marca escrita sempre "Vay Agora".

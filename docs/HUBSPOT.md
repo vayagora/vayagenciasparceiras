@@ -75,16 +75,15 @@ não casa com a cidade da expedição.
 
 ## Etapa do cliente e observação
 
-A cada sincronização, cada cliente cadastrado é ligado ao contato do HubSpot (por e-mail; sem e-mail, por
-telefone, buscando em Telefone, Celular e WhatsApp) e recebe:
+O acompanhamento do contato (status e responsável) é feito pela Vay **no sistema**. Do HubSpot vêm só:
 
-- **Etapa**: negócio **ganho** compatível com a expedição (destino e data) em que o cliente é passageiro →
-  "Compra concluída"; negócio **em aberto** (`HUBSPOT_OPEN_STAGES`, padrão: todas as etapas antes de
-  "Emissão Realizada", menos "Negócio perdido") → "Em negociação"; nenhum → "Não contactado". A Vay pode
-  marcar à mão "Não contactar" ou "Comprou em outro lugar"; compra concluída sempre prevalece.
-- **Observação**: o campo do contato **"Observações para parceiro"** (`HUBSPOT_PROP_OBS_PARCEIRO`, padrão
-  `observacoes_para_parceiro`). **Pendente no HubSpot:** criar esse campo (texto de várias linhas) no Contato.
-  O parceiro vê o que estiver escrito ali.
+- **Em negociação / Compra concluída**: a cada sincronização, cada cliente cadastrado é ligado ao contato do HubSpot
+  (por e-mail; sem e-mail, por telefone em Telefone, Celular ou WhatsApp). Negócio **ganho** compatível com a expedição
+  (destino e data) em que o cliente é passageiro → "Compra concluída"; negócio **em aberto** (`HUBSPOT_OPEN_STAGES`) →
+  "Em negociação".
+- **Observação**: o campo **"Observações para parceiro"** (`observacoes_para_parceiro`, no **Negócio**;
+  `HUBSPOT_PROP_OBS_PARCEIRO`) dos negócios do cliente para a expedição. Enquanto o cliente não tem negócio, a observação
+  é escrita no sistema; depois, só no HubSpot (a do sistema fica travada e as duas aparecem).
 
 ## Detalhes no modal (voo, hospedagem, seguro)
 

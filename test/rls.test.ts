@@ -127,6 +127,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0005_anexos_storage.sql"));
     await db.query(sql("0006_acordo.sql"));
     await db.query(sql("0007_pagamento_cashback.sql"));
+    await db.query(sql("0008_contato_manual.sql"));
     await db.query(GRANTS);
   });
 
@@ -225,6 +226,8 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await as(ID.pa, async () => {
       await db.query(`insert into clients (expedition_id, name, email) values ($1, 'Novo', 'novo@x.com')`, [ID.expA]);
       await denied(`insert into clients (expedition_id, name, email, stage) values ($1, 'X', 'x@x.com', 'nao_contactar')`, [ID.expA]);
+      await denied(`insert into clients (expedition_id, name, email, owner_name) values ($1, 'Y', 'y@x.com', 'Eu mesmo')`, [ID.expA]);
+      await denied(`insert into clients (expedition_id, name, email, partner_note) values ($1, 'Z', 'z@x.com', 'nota')`, [ID.expA]);
       await expect(db.query(`update clients set stage = 'outro_lugar' where expedition_id = $1`, [ID.expA])).resolves.toMatchObject({ rowCount: 0 });
     });
   });
@@ -289,6 +292,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0004_saldo_etapas_anexos.sql"));
     await db.query(sql("0006_acordo.sql"));
     await db.query(sql("0007_pagamento_cashback.sql"));
+    await db.query(sql("0008_contato_manual.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

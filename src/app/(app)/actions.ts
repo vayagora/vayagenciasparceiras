@@ -131,20 +131,36 @@ export async function importClients(expId: string, _: FormState, f: FormData): P
   }
 }
 
-// A etapa vem do HubSpot; a Vay só marca "Não contactar" ou "Comprou em outro lugar" (ou volta ao automático).
+// Acompanhamento do contato pela Vay: status, responsável, observação para o parceiro e nota interna.
+// A observação para o parceiro só pode ser escrita aqui enquanto o cliente não tem negócio no HubSpot;
+// depois disso, ela é lançada no negócio (campo "Observações para parceiro").
+const CONTACT_STAGES = ["auto", "tentando", "em_contato", "chamar_depois", "nao_contactar", "outro_lugar"];
+
 export async function saveFollowUp(clientId: string, _: FormState, f: FormData): Promise<FormState> {
   await requireVay();
   const stage = str(f, "stage");
   const note = str(f, "note");
-  if (!["auto", "nao_contactar", "outro_lugar"].includes(stage)) return { error: "Etapa inválida." };
+  const ownerId = str(f, "owner_id") || null;
+  const partnerNote = str(f, "partner_note");
+  if (!CONTACT_STAGES.includes(stage)) return { error: "Status inválido." };
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("clients")
-    .update({ stage, note, last_follow_up: todayIso() })
-    .eq("id", clientId);
+  const { data: c, error: cErr } = await supabase.from("clients").select("partner_note, hs_status").eq("id", clientId).single();
+  if (cErr || !c) return { error: "Cliente não encontrado." };
+  const locked = c.hs_status !== null;
+  if (locked && f.has("partner_note") && partnerNote !== c.partner_note)
+    return { error: "Este cliente já tem negócio no HubSpot: lance a observação no campo “Observações para parceiro” do negócio." };
+  let ownerName = "";
+  if (ownerId) {
+    const { data: p } = await supabase.from("profiles").select("full_name, email, role").eq("id", ownerId).single();
+    if (!p || p.role !== "vay") return { error: "Responsável inválido." };
+    ownerName = p.full_name || p.email;
+  }
+  const patch: Record<string, unknown> = { stage, note, owner_id: ownerId, owner_name: ownerName, last_follow_up: todayIso() };
+  if (!locked) patch.partner_note = partnerNote;
+  const { error } = await supabase.from("clients").update(patch).eq("id", clientId);
   if (error) return { error: "Não foi possível salvar." };
   revalidatePath("/", "layout");
-  return { ok: "Salvo. O parceiro já vê a etapa atualizada." };
+  return { ok: "Salvo. O parceiro já vê a atualização." };
 }
 
 // ---------------------------------------------------------------- Cashback editado pela Vay (SPEC 1.3)

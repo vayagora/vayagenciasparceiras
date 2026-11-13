@@ -131,7 +131,7 @@ export default async function OverviewPage() {
                     <td><span className="strong">{c.name}</span><div className="sub">{c.phone || c.email}</div></td>
                     <td>{e?.name}<div className="sub">{e ? partnerById.get(e.partner_id)?.name : ""}</div></td>
                     <td><Badge tone={st.tone} dot>{st.label}</Badge></td>
-                    <td>{c.partner_note || <span className="muted">—</span>}</td>
+                    <td>{c.hs_note || c.partner_note || <span className="muted">—</span>}</td>
                     <td><Link href={`/expedicoes/${c.expedition_id}?cliente=${c.id}`} className="btn secondary sm">Atualizar</Link></td>
                   </tr>
                 );

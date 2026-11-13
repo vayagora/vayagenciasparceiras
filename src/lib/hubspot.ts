@@ -17,7 +17,7 @@ export type HubspotConfig = {
   origemValue: string;
   // Etapas "antes da compra" (em negociação)
   openStages: string[];
-  // Campo do contato com as observações para o parceiro
+  // Campo do negócio com as observações para o parceiro
   obsProp: string;
 };
 
@@ -86,6 +86,7 @@ export function dealProperties(cfg: HubspotConfig): string[] {
     "closedate",
     "dealstage",
     cfg.origemProp,
+    cfg.obsProp,
     FIELDS.servico,
     FIELDS.payment,
     FIELDS.amount,
@@ -395,11 +396,11 @@ export function phoneVariants(phone: string | null | undefined): string[] {
   return [...new Set([`+55${local}`, `55${local}`, local, `+${d}`, d])];
 }
 
-export type HsPerson = { id: string; email: string; phones: string[]; name: string; obs: string };
+export type HsPerson = { id: string; email: string; phones: string[]; name: string };
 
 // Procura contatos por e-mail e por telefone (para ligar os clientes cadastrados aos contatos do HubSpot).
 export async function findContacts(cfg: HubspotConfig, emails: string[], phones: string[]): Promise<HsPerson[]> {
-  const props = ["firstname", "lastname", "email", "phone", "mobilephone", "hs_whatsapp_phone_number", cfg.obsProp];
+  const props = ["firstname", "lastname", "email", "phone", "mobilephone", "hs_whatsapp_phone_number"];
   const found = new Map<string, HsPerson>();
   const run = async (filterGroups: { filters: Filter[] }[]) => {
     let after: string | undefined;
@@ -416,7 +417,6 @@ export async function findContacts(cfg: HubspotConfig, emails: string[], phones:
           email: String(p.email ?? "").trim().toLowerCase(),
           phones: [p.phone, p.mobilephone, p.hs_whatsapp_phone_number].map((x) => String(x ?? "").trim()).filter(Boolean),
           name: contactName(p),
-          obs: String(p[cfg.obsProp] ?? "").trim(),
         });
       }
       after = r.paging?.next?.after;
@@ -428,20 +428,6 @@ export async function findContacts(cfg: HubspotConfig, emails: string[], phones:
   for (const part of chunk(variants, 100))
     await run(["phone", "mobilephone", "hs_whatsapp_phone_number"].map((prop) => ({ filters: [{ propertyName: prop, operator: "IN", values: part }] })));
   return [...found.values()];
-}
-
-// Observações de contatos já conhecidos (pelo ID).
-export async function readContactObs(cfg: HubspotConfig, ids: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (const part of chunk([...new Set(ids)], 100)) {
-    const r = await call<{ results: { id: string; properties: Record<string, string | null> }[] }>(
-      cfg,
-      "/crm/v3/objects/contacts/batch/read",
-      { properties: [cfg.obsProp], inputs: part.map((id) => ({ id })) },
-    );
-    for (const c of r.results) out.set(c.id, String(c.properties[cfg.obsProp] ?? "").trim());
-  }
-  return out;
 }
 
 // Empresas (agências) associadas a cada negócio, com o nome.

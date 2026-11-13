@@ -252,10 +252,16 @@ describe("etapa do cliente pelo HubSpot", () => {
   const d = (id: string, kind: StatusDeal["kind"], over: Partial<StatusDeal> = {}): StatusDeal => ({ id, kind, legs, end_date: "2026-12-16", people: [person], ...over });
 
   it("negócio ganho compatível → compra concluída (prevalece sobre o em aberto)", () => {
-    expect(clientHubspotStatus(baroni, exp, [d("1", "open"), d("2", "won")])).toEqual({ status: "fechado", dealId: "2" });
+    expect(clientHubspotStatus(baroni, exp, [d("1", "open"), d("2", "won")])).toMatchObject({ status: "fechado", dealId: "2" });
   });
+  it("traz as observações dos negócios do cliente (ganho primeiro, sem repetir)", () => {
+    const r = clientHubspotStatus(baroni, exp, [d("1", "open", { note: "Cotando assento" }), d("2", "won", { note: "Emitido, bagagem inclusa" }), d("3", "open", { note: "Cotando assento" })]);
+    expect(r.note).toBe("Emitido, bagagem inclusa\n\nCotando assento");
+    expect(clientHubspotStatus(baroni, exp, []).note).toBe("");
+  });
+
   it("só em aberto → em negociação", () => {
-    expect(clientHubspotStatus(baroni, exp, [d("1", "open")])).toEqual({ status: "negociacao", dealId: "1" });
+    expect(clientHubspotStatus(baroni, exp, [d("1", "open")])).toMatchObject({ status: "negociacao", dealId: "1" });
   });
   it("negócio de outro destino ou de outra pessoa não conta", () => {
     const paris = [{ city: "Paris", date: "2026-08-01", lat: 49, lng: 2.5 }];
@@ -263,7 +269,7 @@ describe("etapa do cliente pelo HubSpot", () => {
     expect(clientHubspotStatus(baroni, exp, [d("1", "won", { people: [{ ...person, contactId: "9", name: "Outra Pessoa", phone: "" }] })]).status).toBeNull();
   });
   it("liga o cliente ao contato por e-mail ou, sem e-mail, por telefone", () => {
-    const people = [{ id: "7", email: "ana@x.com", phones: [], name: "Ana", obs: "" }, { id: "8", email: "", phones: ["+5531993272968"], name: "Baroni", obs: "Prefere janela" }];
+    const people = [{ id: "7", email: "ana@x.com", phones: [], name: "Ana" }, { id: "8", email: "", phones: ["+5531993272968"], name: "Baroni" }];
     expect(linkContact({ ...baroni, email: "ANA@x.com" }, people)?.id).toBe("7");
     expect(linkContact(baroni, people)?.id).toBe("8");
     expect(linkContact({ ...baroni, phone: "" }, people)).toBeUndefined();

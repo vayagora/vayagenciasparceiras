@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.3 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.4 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.4:** acompanhamento do contato no sistema (status do contato e responsável marcados pela Vay); observação para o parceiro escrita no sistema até existir negócio, e depois só pelo campo "Observações para parceiro" do negócio no HubSpot. Afeta §3 e §5.
 
 **Mudanças na 1.3:** (1) cliente recorrente: toda compra ligada a uma expedição da agência remunera, mesmo que não seja a primeira compra do cliente; compras fora das expedições da agência não remuneram. (2) acompanhante que não está na expedição deve ir num negócio separado; negócio que mistura passageiro da expedição com acompanhante fora dela é apontado como inconsistência. (3) forma de pagamento: dinheiro gera cashback; 100% "Crédito na VAY" entra no sistema sem cashback; pagamento misto vai para conferência e a Vay define o cashback final, com histórico de alterações. Afeta §1, §4.4, §4.5, §5 e §6.
 
@@ -63,16 +65,19 @@ O acordo de parceria padrão é o PDF "Regras de Negócio Padrões"; a Vay pode 
 - **Vínculo negócio → expedição**: expedição (ou nenhuma), método (`auto` | `manual`), motivo (texto), sinalizações, conferido por/em.
 - **Fechamento de período**: trimestre, parceiro, valores congelados.
 
-Etapa do cliente (calculada a cada sincronização, considerando só negócios **compatíveis com a expedição** por destino e data em que o cliente é passageiro):
+Etapa do cliente (SPEC 1.4). O **acompanhamento do contato é feito pela Vay no sistema**; a **venda vem do HubSpot**:
 
-- **Compra concluída**: negócio na etapa de venda concluída ("Emissão Realizada"), ou o cliente é passageiro de um negócio vinculado à expedição. Prevalece sobre tudo.
-- **Não contactar** / **Comprou em outro lugar**: marcação manual da Vay.
-- **Em negociação**: negócio em qualquer etapa antes da compra (menos "Negócio perdido").
-- **Não contactado**: nenhum negócio no HubSpot.
+- **Compra concluída**: negócio na etapa de venda concluída ("Emissão Realizada") compatível com a expedição (destino e data) em que o cliente é passageiro, ou cliente passageiro de negócio vinculado. Prevalece sobre tudo.
+- **Não contactar** / **Comprou em outro lugar**: marcados pela Vay no sistema.
+- **Em negociação**: negócio em qualquer etapa antes da compra (menos "Negócio perdido"), compatível com a expedição.
+- **Tentando contato** / **Em contato** / **Chamar depois**: status do contato marcados pela Vay no sistema.
+- **Não contactado**: nada marcado e nenhum negócio.
 
-Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, Celular ou WhatsApp). A coluna **Observação** mostra o campo "Observações para parceiro" do contato (escrito no HubSpot).
+Para cada cliente a Vay também registra no sistema o **Responsável** (quem da equipe Vay está fazendo o contato; o parceiro vê o nome).
 
-**Correspondência cliente ↔ passageiro:** mesmo ID de contato no HubSpot; sem ID, mesmo e-mail; sem e-mail, mesmo telefone normalizado (só dígitos, últimos 11).
+**Observação para o parceiro:** enquanto o cliente **não tem negócio** no HubSpot, a Vay escreve a observação no sistema. Quando passa a ter (em negociação ou compra concluída), o sistema mostra as duas — a escrita no sistema (se houver) e o campo "Observações para parceiro" do(s) negócio(s) no HubSpot — e **trava** a do sistema, para que as novas sejam lançadas no HubSpot.
+
+Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, Celular ou WhatsApp).
 
 ## 4. Fluxos
 
@@ -149,7 +154,7 @@ Por cliente: etapa e nota. Salvar grava a data (fuso America/Sao_Paulo). Compras
 - Painel: **Saldo atual** em destaque (com "Ver extrato") e botão "Acordo de parceria". Filtro Ano + Trimestre (jan–mar, abr–jun, jul–set, out–dez, ou ano inteiro). Padrão: último trimestre concluído em UTC−3. Período em andamento mostra aviso de valores parciais. Período = data de fechamento do negócio. Conteúdo, nesta ordem: KPIs (clientes cadastrados com compras concluídas em destaque, ganhos do período, negócios fechados — sem volume vendido), andamento dos clientes por expedição (compra concluída, em negociação, não contactados, cadastrados), cartões 3%/3%/5% com ganhos do período, tabela "Ganhos por expedição" com total.
 - Extrato: saldo atual, total recebido, total gasto e lançamentos (data, tipo, descrição, origem, valor, saldo) com filtro Tudo/Entradas/Saídas. Mesmo padrão do Portal do Comissário.
 - Expedições: em andamento/programadas; seção recolhida "Expedições finalizadas" (término já passou, UTC−3) com contagem e ganhos.
-- Expedição: faixa compacta de indicadores; cadastro manual; importação; tabela de clientes (etapa, **negócio**, voo, hospedagem, seguro, seu ganho, **observação**). Com compra, o selo de voo/hospedagem/seguro abre um modal com os dados do HubSpot (trechos com horários e companhia; hotel; plano do seguro) e os comentários e arquivos que a Vay adicionou (o parceiro vê; só a Vay adiciona e apaga). Vendas atribuídas a clientes fora da lista aparecem só como uma linha-resumo com o ganho.
+- Expedição: faixa compacta de indicadores; cadastro manual; importação; tabela de clientes (etapa, **responsável**, **negócio**, voo, hospedagem, seguro, seu ganho, **observação**). Com compra, o selo de voo/hospedagem/seguro abre um modal com os dados do HubSpot (trechos com horários e companhia; hotel; plano do seguro) e os comentários e arquivos que a Vay adicionou (o parceiro vê; só a Vay adiciona e apaga). Vendas atribuídas a clientes fora da lista aparecem só como uma linha-resumo com o ganho.
 
 **Tabela de clientes com vários passageiros por negócio** (parceiro e Vay):
 - **Uma linha por passageiro**, com a coluna **Negócio** mostrando o número (ou números, se estiver em mais de um negócio).
