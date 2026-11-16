@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { expEnd, expStatus, PRODUCTS, STAGES, stageOf, type Product, type Tone } from "@/lib/commission";
+import { expEnd, expStatus, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
 import type { ManualStage, StageId } from "@/lib/types";
 import type { ClientLine } from "@/lib/ledger";
-import { calculatedCashback, dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
+import { calculatedCashback, dealNo, pendingKeys, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
-import { ClientTools, DealActions, NewDealForm, ReviewToggle } from "./forms";
+import { ClientTools, NewDealForm } from "./forms";
 import { ClientsTable, type TableRow } from "./ClientsTable";
-import { CashbackEditor } from "./CashbackEditor";
+import { DealGroups } from "./DealGroups";
+import type { DealView } from "./DealRow";
 import type { ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
@@ -146,6 +147,59 @@ export default async function ExpeditionPage({
     { value: "none", label: "Sem expedição (não remunera)" },
   ];
 
+  const productsOf = (d: Resolved["deal"]) =>
+    PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`).join(" · ") || "—";
+  // Dados do card compacto + modal de cada negócio (DealRow)
+  const view = (r: Resolved): DealView => {
+    const d = r.deal;
+    const unsig = d.signaled === false;
+    const keys = pendingKeys(r);
+    const legs = d.legs;
+    const others = r.candIds.slice(1).map((cid) => world.exps.find((e) => e.id === cid)?.name).filter(Boolean);
+    return {
+      id: d.id,
+      no: dealNo(d),
+      name: d.name,
+      hubspotUrl: d.hubspot_id ? `https://app.hubspot.com/contacts/${portal}/record/0-3/${d.hubspot_id}` : null,
+      flags: unsig
+        ? [{ key: "nao_sinalizado", label: "Não sinalizado no HubSpot", tone: "red", pending: true }]
+        : r.flags.map((f) => ({ key: f.key, label: f.label, tone: f.tone, pending: keys.includes(f.key) })),
+      flagKeys: keys,
+      needsReview: r.needsReview,
+      reviewed: r.reviewedNow ? { by: d.reviewed_by_name ?? "", at: d.reviewed_at ?? null } : null,
+      reviewStale: r.reviewStale,
+      manual: r.manual,
+      passengers: sortPassengers(d.passengers).map((p) => ({
+        id: p.id,
+        name: p.name,
+        strong: p.is_titular,
+        note: [
+          p.is_buyer && !p.is_passenger ? "comprador, não viaja" : p.is_buyer ? "comprador" : p.is_titular ? "titular" : "",
+          r.exp && r.unregistered.some((u) => u.id === p.id) ? "não cadastrado" : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+      routeShort: legs.length ? `${legs[0].city} → ${legs[legs.length - 1].city} · ${dm(legs[0].date)}–${dm(d.end_date)}` : "",
+      route: `${legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta ${fmtDate(d.end_date)}`,
+      closedOn: fmtDate(d.closed_on),
+      products: productsOf(d),
+      payment: d.payment_methods.length ? d.payment_methods.join(" + ") : "não informado no HubSpot",
+      reason: r.reason + (others.length ? ` Outras expedições compatíveis: ${others.join(", ")}.` : ""),
+      com: unsig ? r.potential.total : r.com.total,
+      comLabel: unsig ? "Comissão se for sinalizado" : r.exp ? (r.flags.some((f) => f.key === "misto") ? "Cashback a definir" : "Cashback do parceiro") : "Sem expedição · não remunera",
+      assign: unsig
+        ? undefined
+        : { value: d.override_none ? "none" : d.override_expedition_id ?? "auto", options: assignOptions, canLinkHere: !r.exp, hereExpId: exp.id },
+      cashback:
+        !unsig && r.exp
+          ? { current: r.com.total, calculated: calculatedCashback(d), override: d.cashback_override, history: world.cashbackHistory.filter((h) => h.deal_id === d.id) }
+          : undefined,
+      fixes: unsig ? r.fixes : undefined,
+      evidence: unsig ? (r.listEvidence ? { label: "Passageiro na lista do parceiro", tone: "yellow" } : { label: "Só destino e data", tone: "neutral" }) : undefined,
+    };
+  };
+
   return (
     <>
       <div className="page-head">
@@ -223,74 +277,7 @@ export default async function ExpeditionPage({
             {partner ? <NewDealForm afiliado={partner.afiliado} defaultCity={exp.city} defaultDate={exp.start_date} /> : null}
           </div>
           {expDeals.length === 0 ? <p className="muted">Nenhum negócio do HubSpot vinculado a esta expedição ainda.</p> : null}
-          {expDeals.map((r) => {
-            const d = r.deal;
-            const flags: { label: string; tone: Tone }[] = r.flags.map((f) => ({ label: f.label, tone: f.tone }));
-            if (r.manual) flags.unshift({ label: "Ajuste manual", tone: "purple" });
-            if (d.reviewed) flags.unshift({ label: "Conferido", tone: "success" });
-            if (!flags.length) flags.push({ label: "Vínculo exato", tone: "success" });
-            const prods = PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`);
-            const others = r.candIds.slice(1).map((cid) => world.exps.find((e) => e.id === cid)?.name).filter(Boolean);
-            return (
-              <div key={d.id} className={`deal${r.needsReview ? " review" : ""}`}>
-                <div className="top">
-                  <div className="stack" style={{ gap: 6 }}>
-                    <div className="row" style={{ gap: 8 }}>
-                      <span className="strong">Negócio {dealNo(d)}</span>
-                      {flags.map((f, i) => <Badge key={i} tone={f.tone}>{f.label}</Badge>)}
-                    </div>
-                    <span className="small">
-                      {sortPassengers(d.passengers).map((p, i) => {
-                        const notListed = r.exp && r.unregistered.some((u) => u.id === p.id);
-                        return (
-                          <span key={p.id}>
-                            {i ? " · " : ""}
-                            <span className={p.is_titular ? "strong" : undefined}>{p.name}</span>
-                            {p.is_buyer && !p.is_passenger ? " (comprador, não viaja)" : p.is_buyer ? " (comprador)" : p.is_titular ? " (titular)" : ""}
-                            {notListed ? <span className="muted"> · não cadastrado</span> : null}
-                          </span>
-                        );
-                      })}
-                    </span>
-                    <span className="small">
-                      {d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta {fmtDate(d.end_date)}
-                    </span>
-                    <span className="small muted">Fechado em {fmtDate(d.closed_on)} · {prods.join(" · ")}</span>
-                    <span className="small muted">Pagamento: {d.payment_methods.length ? d.payment_methods.join(" + ") : "não informado no HubSpot"}</span>
-                    <span className="small muted">
-                      {r.reason}
-                      {others.length ? ` Outras expedições compatíveis: ${others.join(", ")}.` : ""}
-                    </span>
-                  </div>
-                  <div className="com">
-                    <strong>{brl(r.com.total)}</strong>
-                    <span className="small muted">{r.exp ? (r.flags.some((f) => f.key === "misto") ? "Cashback a definir" : "Cashback do parceiro") : "Sem expedição · não remunera"}</span>
-                  </div>
-                </div>
-                <DealActions
-                  dealId={d.id}
-                  hereExpId={exp.id}
-                  value={d.override_none ? "none" : d.override_expedition_id ?? "auto"}
-                  options={assignOptions}
-                  canLinkHere={!r.exp}
-                  canReview={r.needsReview}
-                  reviewed={d.reviewed}
-                />
-                {r.exp ? (
-                  <div className="row">
-                    <CashbackEditor
-                      dealId={d.id}
-                      dealNo={dealNo(d)}
-                      current={r.com.total}
-                      calculated={calculatedCashback(d)}
-                      override={d.cashback_override}
-                      history={world.cashbackHistory.filter((h) => h.deal_id === d.id)}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+          <DealGroups views={expDeals.map((r) => view(r))} pendingTitle="Para conferir" restTitle="Demais negócios" />
         </section>
       ) : null}
 
@@ -305,47 +292,7 @@ export default async function ExpeditionPage({
             </Tip>
             <Badge tone="red">{unsignaled.length}</Badge>
           </div>
-          {unsignaled.map((r) => {
-            const d = r.deal;
-            const prods = PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`);
-            return (
-              <div key={d.id} className={`deal${r.needsReview ? " review" : ""}`}>
-                <div className="top">
-                  <div className="stack" style={{ gap: 6 }}>
-                    <div className="row" style={{ gap: 8 }}>
-                      <span className="strong">Negócio {dealNo(d)}</span>
-                      {r.listEvidence ? (
-                        <Badge tone="yellow">Passageiro na lista do parceiro</Badge>
-                      ) : (
-                        <Badge tone="neutral">Só destino e data</Badge>
-                      )}
-                      {d.reviewed ? <Badge tone="success">Conferido</Badge> : null}
-                    </div>
-                    {d.name ? <span className="small">{d.name}</span> : null}
-                    <span className="small">{sortPassengers(d.passengers).map((p) => p.name).join(" · ") || "Sem contatos associados"}</span>
-                    <span className="small">
-                      {d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta {fmtDate(d.end_date)}
-                    </span>
-                    <span className="small muted">Fechado em {fmtDate(d.closed_on)} · {prods.join(" · ")}</span>
-                    <span className="small muted">{r.reason}</span>
-                    <span className="small">
-                      <strong>Para corrigir no HubSpot:</strong> {r.fixes.join("; ")}.{" "}
-                      {d.hubspot_id ? (
-                        <a href={`https://app.hubspot.com/contacts/${portal}/record/0-3/${d.hubspot_id}`} target="_blank" rel="noreferrer">
-                          Abrir no HubSpot
-                        </a>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="com">
-                    <strong>{brl(r.potential.total)}</strong>
-                    <span className="small muted">Comissão se for sinalizado</span>
-                  </div>
-                </div>
-                <ReviewToggle dealId={d.id} reviewed={d.reviewed} />
-              </div>
-            );
-          })}
+          <DealGroups views={unsignaled.map((r) => view(r))} pendingTitle="Para conferir" restTitle="Conferidos" />
         </section>
       ) : null}
     </>

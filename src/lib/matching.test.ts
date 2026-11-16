@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Ledger, shownStage } from "./ledger";
-import { calculatedCashback, dealNo, resolveDeals, samePerson } from "./matching";
+import { calculatedCashback, dealNo, resolveDeals, reviewCovers, samePerson } from "./matching";
 import { paymentKind } from "./commission";
 import type { Client, Deal, Expedition, Partner, Passenger } from "./types";
 
@@ -205,6 +205,27 @@ describe("negócios com vários passageiros", () => {
   it("conferido pela Vay, a inconsistência deixa de ser pendência", () => {
     const l = new Ledger([{ ...casal(), reviewed: true }], [partner], [madrid], [emerson]);
     expect(l.pendingFor(madrid)).toBe(0);
+  });
+
+  it("conferência registrada vale só para os avisos daquele momento", () => {
+    const at = "2026-11-10T15:00:00Z";
+    const ok = new Ledger([{ ...casal(), reviewed: true, reviewed_at: at, reviewed_flags: ["acompanhante"] }], [partner], [madrid], [emerson]);
+    expect(ok.resolved[0].needsReview).toBe(false);
+    expect(ok.resolved[0].reviewedNow).toBe(true);
+    expect(ok.pendingFor(madrid)).toBe(0);
+    // conferido quando só havia outro aviso → o aviso novo volta para "Para conferir"
+    const stale = new Ledger([{ ...casal(), reviewed: true, reviewed_at: at, reviewed_flags: ["misto"] }], [partner], [madrid], [emerson]);
+    expect(stale.resolved[0].needsReview).toBe(true);
+    expect(stale.resolved[0].reviewStale).toBe(true);
+    expect(stale.resolved[0].reviewedNow).toBe(false);
+    expect(stale.pendingFor(madrid)).toBe(1);
+  });
+
+  it("reviewCovers: conferência antiga (sem registro) cobre tudo; nova cobre só as chaves gravadas", () => {
+    expect(reviewCovers({ reviewed: true, reviewed_at: null }, ["fora"])).toBe(true);
+    expect(reviewCovers({ reviewed: true, reviewed_at: "2026-11-10T15:00:00Z", reviewed_flags: ["fora"] }, ["fora"])).toBe(true);
+    expect(reviewCovers({ reviewed: true, reviewed_at: "2026-11-10T15:00:00Z", reviewed_flags: ["fora"] }, ["fora", "acompanhante"])).toBe(false);
+    expect(reviewCovers({ reviewed: false, reviewed_at: null }, [])).toBe(false);
   });
 
   it("só o titular cadastrado, visão do parceiro: '+1 passageiro não cadastrado', sem identidade", () => {

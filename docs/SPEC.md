@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.7 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.8 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.8:** conferência registra quem conferiu, quando e quais avisos existiam; aviso novo depois disso volta o negócio para "Para conferir"; cada negócio vira uma linha compacta e os detalhes/ações abrem num modal. Afeta §4.5.
 
 **Mudanças na 1.7:** rótulos de associação "Comprador" e "Passageiro" do HubSpot (comprador que não viaja não conta como passageiro; quem viajou sem comprar mostra "comprado por …"); "Comprador" também marca o titular; negócio com um contato só não precisa de rótulo; reconhecimento pelo nome ignora de/da/do/das/dos/e. Afeta §3, §4.3 e §6.
 
@@ -158,7 +160,10 @@ Negócios fechados fora de expedições não geram remuneração.
 Seção "Negócios do HubSpot" na tela de cada expedição:
 - negócios vinculados à expedição + negócios do mesmo parceiro sem expedição;
 - por negócio: número, passageiros (titular destacado; os não cadastrados marcados), roteiro, datas, valores, comissão, motivo (tooltip), sinalizações;
-- ações: trocar expedição (automática / outra expedição do parceiro / sem expedição), "Vincular a esta expedição", "Marcar como conferido" / desfazer;
+- cada negócio é **uma linha compacta** (número, primeiro aviso pendente + quantidade, titular, roteiro curto, cashback); clicar abre um **modal** com os detalhes e as ações;
+- a seção se divide em **"Para conferir"** (no topo) e **"Demais negócios"** (recolhida: conferidos e sem pendência). Conferido mostra "Conferido por {pessoa} em dd/mm/aaaa" e os avisos em cinza;
+- ações (no modal): trocar expedição (automática / outra expedição do parceiro / sem expedição), "Vincular a esta expedição", "Marcar como conferido" / desfazer;
+- **a conferência vale para os avisos que existiam no momento** (tabela `deal_reviews`, só a Vay lê; migração 0012). Se aparecer um aviso novo depois, o negócio volta para "Para conferir" ("Já foi conferido antes, mas apareceu um aviso novo"). Conferências antigas, sem esse registro, continuam valendo;
 - todo ajuste manual fica registrado (quem, quando, de → para).
 
 - ação "Editar cashback": valor final + motivo; o histórico de alterações abre num mini modal.

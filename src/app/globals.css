@@ -327,3 +327,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .qrow { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: 14px; }
 .qrow:first-child { border-top: 0; }
 .qrow.next { color: var(--purple-700); font-weight: 600; }
+
+/* ===== Negócio do HubSpot em uma linha (detalhes no modal) ===== */
+.dealrow { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-card); }
+.dealrow.review { border-color: var(--yellow-300); background: var(--yellow-50); }
+.dealrow-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; width: 100%; padding: 10px 14px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: inherit; }
+.dealrow-main:hover { background: rgba(113, 91, 202, 0.06); }
+.dealrow-badges { display: inline-flex; gap: 4px; flex: none; }
+.dealrow-txt { flex: 1 1 160px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
+.dealrow-com { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; flex: none; }
+.nowrap { white-space: nowrap; }

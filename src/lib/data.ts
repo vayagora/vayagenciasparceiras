@@ -64,7 +64,7 @@ export type World = {
 export const loadWorld = cache(async (): Promise<World> => {
   const supabase = await createClient();
   // deal_passengers: o parceiro só recebe os passageiros que ele cadastrou (RLS).
-  const [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments] = await Promise.all([
+  const [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments, reviews] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("clients").select("*").order("created_at"),
@@ -76,14 +76,18 @@ export const loadWorld = cache(async (): Promise<World> => {
     supabase.from("deal_cashback_history").select("*").order("changed_at", { ascending: false }),
     // Parceiro recebe só os públicos dos próprios clientes (RLS)
     supabase.from("client_comments").select("*").order("created_at"),
+    // Registro da conferência: só a Vay recebe linhas (RLS)
+    supabase.from("deal_reviews").select("deal_id, flags, reviewed_by_name, reviewed_at"),
   ]);
-  for (const r of [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments]) {
+  for (const r of [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments, reviews]) {
     if (r.error) throw new Error(r.error.message);
   }
   const byDeal = new Map<string, Passenger[]>();
   for (const p of (passengers.data ?? []) as Passenger[]) {
     byDeal.set(p.deal_id, [...(byDeal.get(p.deal_id) ?? []), p]);
   }
+  type ReviewRow = { deal_id: string; flags: string[]; reviewed_by_name: string; reviewed_at: string };
+  const reviewOf = new Map(((reviews.data ?? []) as ReviewRow[]).map((r) => [r.deal_id, r]));
   const w = {
     partners: (partners.data ?? []) as Partner[],
     exps: (exps.data ?? []) as Expedition[],
@@ -97,6 +101,9 @@ export const loadWorld = cache(async (): Promise<World> => {
       details: d.details ?? {},
       payment_methods: d.payment_methods ?? [],
       cashback_override: d.cashback_override === null || d.cashback_override === undefined ? null : Number(d.cashback_override),
+      reviewed_at: reviewOf.get(d.id)?.reviewed_at ?? null,
+      reviewed_by_name: reviewOf.get(d.id)?.reviewed_by_name ?? "",
+      reviewed_flags: reviewOf.get(d.id)?.flags ?? [],
     })),
     notes: (notes.data ?? []) as DealNote[],
     entries: ((entries.data ?? []) as BalanceEntry[]).map((e) => ({ ...e, amount: Number(e.amount) })),

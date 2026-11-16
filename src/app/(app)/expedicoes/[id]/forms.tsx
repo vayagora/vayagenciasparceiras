@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CITIES } from "@/lib/cities";
 import { parseRows } from "@/lib/csv";
 import { Tip } from "@/components/ui";
-import { addClient, assignDeal, createDeal, importClients, setReviewed, type FormState } from "../../actions";
+import { addClient, createDeal, importClients, type FormState } from "../../actions";
 
 function Feedback({ state }: { state: FormState }) {
   if (state?.error) return <div className="error" role="alert">{state.error}</div>;
@@ -145,76 +145,6 @@ function ImportForm({ expId, onClose }: { expId: string; onClose: () => void }) 
 }
 
 // ---------- Vay: follow-up ----------
-
-// ---------- Vay: conciliação de negócios ----------
-
-export function DealActions({
-  dealId,
-  hereExpId,
-  value,
-  options,
-  canLinkHere,
-  canReview,
-  reviewed,
-}: {
-  dealId: string;
-  hereExpId: string;
-  value: string;
-  options: { value: string; label: string }[];
-  canLinkHere: boolean;
-  canReview: boolean;
-  reviewed: boolean;
-}) {
-  const [pending, start] = useTransition();
-  return (
-    <div className="row" style={{ opacity: pending ? 0.6 : 1 }}>
-      <label className="sr-only" htmlFor={`as-${dealId}`}>Expedição do negócio</label>
-      <select
-        id={`as-${dealId}`}
-        className="select"
-        style={{ width: "auto", maxWidth: "100%" }}
-        value={value}
-        disabled={pending}
-        onChange={(e) => start(() => assignDeal(dealId, e.target.value))}
-      >
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      {canLinkHere ? (
-        <button type="button" className="btn secondary sm" disabled={pending} onClick={() => start(() => assignDeal(dealId, hereExpId))}>
-          Vincular a esta expedição
-        </button>
-      ) : null}
-      {canReview ? (
-        <button type="button" className="btn outline sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, true))}>
-          Marcar como conferido
-        </button>
-      ) : null}
-      {reviewed ? (
-        <button type="button" className="btn ghost sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, false))}>
-          Desfazer conferência
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-// Negócio não sinalizado: a Vay só marca como conferido (ex.: não é do parceiro). A correção é no HubSpot.
-export function ReviewToggle({ dealId, reviewed }: { dealId: string; reviewed: boolean }) {
-  const [pending, start] = useTransition();
-  return (
-    <div className="row" style={{ opacity: pending ? 0.6 : 1 }}>
-      {reviewed ? (
-        <button type="button" className="btn ghost sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, false))}>
-          Desfazer conferência
-        </button>
-      ) : (
-        <button type="button" className="btn outline sm" disabled={pending} onClick={() => start(() => setReviewed(dealId, true))}>
-          Marcar como conferido
-        </button>
-      )}
-    </div>
-  );
-}
 
 export function NewDealForm({ afiliado, defaultCity, defaultDate }: { afiliado: string; defaultCity: string; defaultDate: string }) {
   const [state, action, pending] = useActionState(createDeal.bind(null, afiliado), undefined);

@@ -108,6 +108,10 @@ export type Deal = {
   override_expedition_id: string | null;
   override_none: boolean;
   reviewed: boolean;
+  // Quem conferiu, quando e quais avisos (chaves) estavam na conferência
+  reviewed_at?: string | null;
+  reviewed_by_name?: string;
+  reviewed_flags?: string[];
   // Total de passageiros (o parceiro vê a contagem, não a identidade dos que não cadastrou)
   passenger_count: number;
   titular_labeled: boolean;

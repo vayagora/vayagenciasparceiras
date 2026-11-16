@@ -131,7 +131,25 @@ export type Resolved = {
   listEvidence: boolean;
   // O que corrigir no HubSpot
   fixes: string[];
+  // Conferido pela Vay e a conferência ainda cobre todos os avisos atuais
+  reviewedNow: boolean;
+  // Foi conferido, mas apareceu aviso novo depois
+  reviewStale: boolean;
 };
+
+// A conferência vale para os avisos que existiam quando foi feita (reviewed_flags).
+// Conferência antiga, sem data, vale para os avisos atuais.
+export function reviewCovers(d: Pick<Deal, "reviewed" | "reviewed_at" | "reviewed_flags">, pendingKeys: string[]): boolean {
+  if (!d.reviewed) return false;
+  if (!d.reviewed_at) return true;
+  const done = d.reviewed_flags ?? [];
+  return pendingKeys.every((k) => done.includes(k));
+}
+
+// Avisos que pedem conferência (os informativos não contam).
+export function pendingKeys(r: Pick<Resolved, "flags" | "deal">): FlagKey[] {
+  return r.deal.signaled === false ? ["nao_sinalizado"] : r.flags.filter((f) => !INFORMATIVE.includes(f.key)).map((f) => f.key);
+}
 
 // Sem acentos, minúsculo, espaços simples e sem as partículas de/da/do/das/dos/e (igual a fold_name, migração 0011)
 const foldName = (s: string) =>
@@ -245,6 +263,8 @@ export function resolveDeals(
       potential: ZERO,
       listEvidence: false,
       fixes: [],
+      reviewedNow: false,
+      reviewStale: false,
     };
 
     // Não sinalizado no HubSpot: procura a expedição por destino e data; nunca remunera.
@@ -267,7 +287,10 @@ export function resolveDeals(
         );
         r.fixes = hubspotFixes(d, owner?.afiliado ?? "da agência");
         r.flags.push({ key: "nao_sinalizado", label: "Encontrado, mas não sinalizado no HubSpot", tone: "red" });
-        r.needsReview = !d.reviewed;
+        const covered = reviewCovers(d, ["nao_sinalizado"]);
+        r.needsReview = !covered;
+        r.reviewedNow = covered;
+        r.reviewStale = d.reviewed && !covered;
       }
       return r;
     }
@@ -324,7 +347,11 @@ export function resolveDeals(
     if (d.titular_labeled === false)
       r.flags.push({ key: "titular", label: "Titular não definido", tone: "yellow" });
 
-    r.needsReview = !d.reviewed && r.flags.some((f) => !INFORMATIVE.includes(f.key));
+    const keys = pendingKeys(r);
+    const covered = reviewCovers(d, keys);
+    r.needsReview = keys.length > 0 && !covered;
+    r.reviewedNow = d.reviewed && covered;
+    r.reviewStale = d.reviewed && !covered && keys.length > 0;
     return r;
   });
 }

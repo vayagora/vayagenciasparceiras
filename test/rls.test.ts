@@ -136,6 +136,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0009_comentarios.sql"));
     await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(sql("0011_comprador_passageiro.sql"));
+    await db.query(sql("0012_conferencia.sql"));
     await db.query(GRANTS);
   });
 
@@ -292,6 +293,16 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     expect(await as(ID.vay, () => rows(`select note from deal_cashback_history`))).toEqual([{ note: "misto" }]);
   });
 
+  it("registro da conferência (avisos conferidos): só a Vay lê e grava", async () => {
+    await db.query(`insert into deal_reviews (deal_id, flags, reviewed_by_name) values ($1, '{fora,acompanhante}', 'Ana Vay')`, [ID.dealA]);
+    await as(ID.pa, async () => {
+      expect(await rows(`select deal_id from deal_reviews`)).toEqual([]);
+      await denied(`insert into deal_reviews (deal_id, flags) values ($1, '{}')`, [ID.dealB]);
+      await expect(db.query(`delete from deal_reviews where deal_id = $1`, [ID.dealA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+    expect(await as(ID.vay, () => rows(`select flags from deal_reviews`))).toEqual([{ flags: ["fora", "acompanhante"] }]);
+  });
+
   it("0009 converte observação em comentário público e nota interna em comentário interno (e esvazia a nota)", async () => {
     const r = await rows(
       `select c.name, k.body, k.internal, k.author_name, k.created_at::date::text as d from client_comments k join clients c on c.id = k.client_id where c.name in ('Bia Lopes', 'Gislaine Souza') order by c.name`,
@@ -386,6 +397,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0009_comentarios.sql"));
     await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(sql("0011_comprador_passageiro.sql"));
+    await db.query(sql("0012_conferencia.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

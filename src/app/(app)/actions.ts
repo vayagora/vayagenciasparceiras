@@ -361,9 +361,24 @@ export async function assignDeal(dealId: string, value: string) {
   revalidatePath("/", "layout");
 }
 
-export async function setReviewed(dealId: string, reviewed: boolean) {
-  await requireVay();
+// Conferência: guarda quem conferiu, quando e quais avisos estavam no negócio (flagKeys).
+// O registro fica em deal_reviews (só a Vay lê); deals.reviewed é o que o restante do sistema usa.
+export async function setReviewed(dealId: string, reviewed: boolean, flagKeys: string[] = []) {
+  const s = await requireVay();
   const supabase = await createClient();
+  if (reviewed) {
+    const { error } = await supabase.from("deal_reviews").upsert({
+      deal_id: dealId,
+      flags: flagKeys.filter((k) => /^[a-z_]+$/.test(k)),
+      reviewed_by: s.profile.id,
+      reviewed_by_name: s.profile.full_name || s.profile.email,
+      reviewed_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from("deal_reviews").delete().eq("deal_id", dealId);
+    if (error) throw new Error(error.message);
+  }
   const { error } = await supabase.from("deals").update({ reviewed }).eq("id", dealId);
   if (error) throw new Error(error.message);
   revalidatePath("/", "layout");
