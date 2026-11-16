@@ -227,3 +227,42 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .kpi .highlight { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin-top: 4px; padding: 6px 12px; border-radius: 999px; background: var(--purple-50); color: var(--purple-700); font-weight: 700; font-size: 14px; }
 .amount-in { color: #17694A; font-weight: 700; }
 .amount-out { color: var(--text-strong); font-weight: 700; }
+
+/* ===== Tabela de clientes (protótipo v37) ===== */
+.tbl.clients { min-width: 1180px; font-size: 14px; }
+.tbl.clients th { padding: 8px 12px; font-size: 11px; }
+.tbl.clients td { padding: 8px 12px; vertical-align: middle; }
+.tbl.clients td .sub { font-size: 12px; }
+/* coluna Cliente congelada ao rolar para o lado */
+.tbl .freeze { position: sticky; left: 0; z-index: 2; background: var(--surface-card); min-width: 170px; max-width: 240px; box-shadow: inset -1px 0 0 var(--border-subtle), 8px 0 10px -8px rgba(22, 22, 27, 0.18); }
+.tbl th.freeze { z-index: 3; background: var(--surface-sunken); }
+.tbl tr.hl td.freeze { background: var(--purple-50); }
+.tbl tr.warn td.freeze { background: var(--yellow-50); }
+@media (max-width: 600px) { .tbl .freeze { min-width: 130px; max-width: 160px; } }
+/* barra de ferramentas acima da tabela */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 18px 12px; }
+.toolbar .search { position: relative; flex: 1 1 220px; max-width: 320px; }
+.toolbar .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.toolbar .search .input { min-height: 32px; padding: 4px 10px 4px 32px; font-size: 13px; }
+.select.cell-sel { width: auto; min-height: 30px; padding: 2px 28px 2px 8px; font-size: 13px; border-width: 1px; }
+.iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1.5px solid var(--border-default); border-radius: 999px; background: var(--surface-card); color: var(--purple-700); font: inherit; font-size: 18px; font-weight: 600; line-height: 1; cursor: pointer; }
+.iconbtn:hover { border-color: var(--color-primary); background: var(--purple-50); }
+.iconbtn.wide { width: auto; padding: 0 10px; gap: 4px; font-size: 12px; font-weight: 700; color: var(--text-strong); }
+/* rolagem horizontal também no topo */
+.xscroll-top { overflow-x: auto; overflow-y: hidden; height: 14px; border-bottom: 1px solid var(--border-subtle); }
+.xscroll-top > div { height: 1px; }
+.xscroll-top[hidden] { display: none; }
+/* observação em uma linha */
+.obs-btn { display: flex; align-items: center; gap: 6px; width: 100%; max-width: 260px; min-height: 26px; padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--text-body); text-align: left; cursor: pointer; }
+.obs-btn:hover { background: var(--purple-50); }
+.obs-btn:hover .obs-txt { color: var(--purple-700); text-decoration: underline; }
+.obs-btn.static { cursor: default; }
+.obs-btn.static:hover { background: none; }
+.obs-btn.static:hover .obs-txt { color: inherit; text-decoration: none; }
+.obs-src { flex: none; padding: 1px 6px; border-radius: 999px; background: var(--neutral-100); color: var(--neutral-700); font-size: 11px; font-weight: 600; }
+.obs-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.obs-more { flex: none; font-size: 11px; font-weight: 600; color: var(--purple-700); }
+/* comentários */
+.note.master { border-color: var(--purple-200); background: var(--purple-50); }
+.note.internal { background: var(--surface-sunken); }
+.thread { max-height: 320px; overflow-y: auto; }

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { expEnd, expStatus, PRODUCTS, stageOf, type Product, type Tone } from "@/lib/commission";
+import { expEnd, expStatus, PRODUCTS, STAGES, stageOf, type Product, type Tone } from "@/lib/commission";
+import type { ManualStage, StageId } from "@/lib/types";
 import type { ClientLine } from "@/lib/ledger";
 import { calculatedCashback, dealNo, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
@@ -9,31 +10,12 @@ import { loadWorld, requireSession } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
-import { ClientTools, DealActions, FollowUpForm, NewDealForm, ReviewToggle } from "./forms";
+import { ClientTools, DealActions, NewDealForm, ReviewToggle } from "./forms";
+import { ClientsTable, type TableRow } from "./ClientsTable";
 import { CashbackEditor } from "./CashbackEditor";
-import { ProductCell, type ProductDeal } from "./ProductCell";
+import type { ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
-
-// Observação para o parceiro: a escrita no sistema (antes do negócio) e a do HubSpot (depois).
-function Observation({ partnerNote, hsNote }: { partnerNote: string; hsNote: string }) {
-  if (!partnerNote && !hsNote) return <span className="muted">—</span>;
-  return (
-    <div className="stack" style={{ gap: 4, maxWidth: 300 }}>
-      {partnerNote ? <div style={{ whiteSpace: "pre-wrap" }}>{partnerNote}</div> : null}
-      {hsNote ? (
-        <div style={{ whiteSpace: "pre-wrap" }}>
-          {partnerNote ? <span className="sub">HubSpot · </span> : null}
-          {hsNote}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DealNos({ deals }: { deals: Resolved[] }) {
-  return <td>{deals.length ? deals.map((r) => dealNo(r.deal)).join(", ") : "—"}</td>;
-}
 
 export default async function ExpeditionPage({
   params,
@@ -54,7 +36,6 @@ export default async function ExpeditionPage({
   const st = expStatus(exp);
   const outside = ledger.dealsForExp(exp.id).filter((r) => r.flags.some((f) => f.key === "fora"));
   const outsideCom = outside.reduce((a, r) => a + r.com.total, 0);
-  const editing = isVay && sp.cliente ? t.clients.find((c) => c.id === sp.cliente) : undefined;
   const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
   const notesOf = (dealId: string) => world.notes.filter((n) => n.deal_id === dealId);
   let vayUsers: { id: string; name: string }[] = [];
@@ -69,18 +50,82 @@ export default async function ExpeditionPage({
     details: r.deal.details ?? {},
     notes: notesOf(r.deal.id),
   });
-  // Células de produto: valor só nos negócios da linha principal; nas outras, "Incluído no #…".
-  const cells = (primary: Resolved[], included: Resolved[], hasDeal: boolean) =>
-    PRODUCTS.map((k: Product) => (
-      <ProductCell
-        key={k}
-        product={k}
-        primary={primary.filter((r) => Number(r.deal[k]) > 0).map((r) => ({ ...pd(r), value: Number(r.deal[k]) }))}
-        included={included.filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r))}
-        hasDeal={hasDeal}
-        canEdit={isVay}
-      />
-    ));
+  // Produtos de uma linha: valor só nos negócios da linha principal; nas outras, "Incluído no #…".
+  const prods = (primary: Resolved[], included: Resolved[], hasDeal: boolean): TableRow["prods"] =>
+    PRODUCTS.map((k: Product) => ({
+      product: k,
+      primary: primary.filter((r) => Number(r.deal[k]) > 0).map((r) => ({ ...pd(r), value: Number(r.deal[k]) })),
+      included: included.filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r)),
+      hasDeal,
+    }));
+  const stageCell = (id: StageId, manual: ManualStage, editable: boolean): TableRow["stage"] => {
+    const sg = stageOf(id);
+    return { id, label: sg.label, tone: sg.tone, editable: editable && (STAGES.find((x) => x.id === id)?.manual || id === "novo"), manual };
+  };
+  const fechado = stageOf("fechado");
+  const noOwner = { id: null, name: "", editable: false };
+  const commentsOf = (clientId: string) => world.comments.filter((c) => c.client_id === clientId);
+  const tableRows: TableRow[] = [];
+  for (const l of lines) {
+    const c = l.client;
+    tableRows.push({
+      key: c.id,
+      clientId: c.id,
+      warn: false,
+      people: [{ name: c.name, contact: c.email }],
+      hiddenTxt:
+        !isVay && l.hiddenPassengers
+          ? `+${l.hiddenPassengers} ${l.hiddenPassengers === 1 ? "passageiro não cadastrado" : "passageiros não cadastrados"}`
+          : undefined,
+      stage: stageCell(l.stage, c.stage, isVay),
+      owner: { id: c.owner_id, name: c.owner_name, editable: isVay },
+      dealNos: l.deals.map((r) => dealNo(r.deal)),
+      prods: prods(l.primary, l.included, l.deals.length > 0),
+      com: l.primary.length ? l.com.total : l.included.length ? null : 0,
+      hsNote: c.hs_note,
+      comments: commentsOf(c.id),
+      email: c.email,
+      phone: c.phone,
+    });
+    if (isVay)
+      for (const { passenger: p, deal: r } of l.unregistered)
+        tableRows.push({
+          key: `${c.id}-${p.id}`,
+          clientId: null,
+          warn: false,
+          people: [{ name: p.name, contact: p.email }],
+          tag: { label: "Não cadastrado pelo parceiro", tone: "neutral" },
+          stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
+          owner: noOwner,
+          dealNos: [dealNo(r.deal)],
+          prods: prods([], [r], true),
+          com: null,
+          hsNote: "",
+          comments: [],
+          email: p.email,
+          phone: p.phone,
+        });
+  }
+  if (isVay)
+    for (const r of outside) {
+      const ps = sortPassengers(r.deal.passengers);
+      tableRows.push({
+        key: r.deal.id,
+        clientId: null,
+        warn: true,
+        people: ps.map((p) => ({ name: p.name, suffix: p.is_titular && ps.length > 1 ? " · titular" : undefined, contact: p.email })),
+        tag: { label: "Fora da lista do parceiro", tone: "yellow" },
+        stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
+        owner: noOwner,
+        dealNos: [dealNo(r.deal)],
+        prods: prods([r], [], true),
+        com: r.com.total,
+        hsNote: "",
+        comments: [],
+        email: ps.map((p) => p.email).filter(Boolean).join(", "),
+        phone: ps.map((p) => p.phone).filter(Boolean).join(", "),
+      });
+    }
 
   const expDeals = ledger.resolved
     .filter((r) => r.deal.signaled !== false)
@@ -103,7 +148,11 @@ export default async function ExpeditionPage({
     <>
       <div className="page-head">
         <div>
-          <Link href="/expedicoes" className="back">← Todas as expedições</Link>
+          {isVay && partner ? (
+            <Link href={`/parceiros/${partner.id}`} className="back">← Painel de {partner.name}</Link>
+          ) : (
+            <Link href="/expedicoes" className="back">← Expedições</Link>
+          )}
           <div className="row" style={{ gap: 8 }}>
             <Badge tone={st.tone} dot>{st.label}</Badge>
             {isVay && partner ? <Link href={`/parceiros/${partner.id}`}><Badge tone="neutral">{partner.name}</Badge></Link> : null}
@@ -131,148 +180,30 @@ export default async function ExpeditionPage({
 
       {!isVay ? <ClientTools expId={exp.id} startOpen={!!sp.novo} /> : null}
 
-      {editing ? (
-        <FollowUpForm
-          key={editing.id}
-          expId={exp.id}
-          vayUsers={vayUsers}
-          client={{
-            id: editing.id,
-            name: editing.name,
-            contact: [editing.email, editing.phone].filter(Boolean).join(" · "),
-            stage: editing.stage,
-            shown: stageOf(ledger.shownStage(editing)).label,
-            ownerId: editing.owner_id,
-            partnerNote: editing.partner_note,
-            hsNote: editing.hs_note,
-            locked: editing.hs_status !== null || ledger.clientDeals(editing).length > 0,
-            note: editing.note,
-          }}
-        />
-      ) : null}
-
       <section className="card">
         <div className="card-head">
           <div className="ttl">
             <h2 className="section-title">Clientes da expedição</h2>
             <Tip>
               {isVay
-                ? "Clientes cadastrados pelo parceiro + negócios do HubSpot vinculados a esta expedição."
-                : "Clientes que você cadastrou. Compras confirmadas pela Vay Agora aparecem aqui automaticamente."}
+                ? "Clientes cadastrados pelo parceiro + negócios do HubSpot vinculados a esta expedição. Etapa e responsável se editam na própria linha; clique na observação para ver e adicionar comentários."
+                : "Clientes que você cadastrou. Compras confirmadas pela Vay Agora aparecem aqui automaticamente. Clique na observação para ver os comentários."}
             </Tip>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="tbl" style={{ minWidth: isVay ? 1260 : 1120 }}>
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Etapa</th>
-                <th>Responsável</th>
-                <th>Negócio</th>
-                <th>Voo</th>
-                <th>Hospedagem</th>
-                <th>Seguro</th>
-                <th className="num">{isVay ? "Comissão" : "Seu ganho"}</th>
-                <th>Observação</th>
-                {isVay ? <th>Ação</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l) => {
-                const c = l.client;
-                const sg = stageOf(l.stage);
-                return [
-                  <tr key={c.id} className={editing?.id === c.id ? "hl" : undefined}>
-                    <td>
-                      <span className="strong">{c.name}</span>
-                      <div className="sub">{c.email || "—"}</div>
-                      {c.phone ? <div className="sub">{c.phone}</div> : null}
-                      {!isVay && l.hiddenPassengers ? (
-                        <div className="sub">
-                          +{l.hiddenPassengers} {l.hiddenPassengers === 1 ? "passageiro não cadastrado" : "passageiros não cadastrados"}
-                        </div>
-                      ) : null}
-                      {isVay && c.hubspot_status ? (
-                        <div style={{ marginTop: 6 }}>
-                          <Badge tone={c.hubspot_status === "existente" ? "bluebell" : "neutral"}>
-                            {c.hubspot_status === "existente" ? "Já existia no HubSpot" : "Novo no HubSpot"}
-                          </Badge>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td><Badge tone={sg.tone} dot>{sg.label}</Badge></td>
-                    <td>{c.owner_name || <span className="muted">—</span>}</td>
-                    <DealNos deals={l.deals} />
-                    {cells(l.primary, l.included, l.deals.length > 0)}
-                    <td className="num strong">{l.primary.length ? brl(l.com.total) : l.included.length ? "—" : brl(0)}</td>
-                    <td>
-                      <Observation partnerNote={c.partner_note} hsNote={c.hs_note} />
-                    </td>
-                    {isVay ? (
-                      <td><Link href={`/expedicoes/${exp.id}?cliente=${c.id}#follow-up`} className="btn secondary sm">Atualizar</Link></td>
-                    ) : null}
-                  </tr>,
-                  ...(isVay
-                    ? l.unregistered.map(({ passenger: p, deal: r }) => (
-                        <tr key={`${c.id}-${p.id}`}>
-                          <td>
-                            <span className="strong">{p.name}</span>
-                            <div className="sub">{p.email || p.phone || "—"}</div>
-                            <div style={{ marginTop: 6 }}><Badge tone="neutral">Não cadastrado pelo parceiro</Badge></div>
-                          </td>
-                          <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
-                          <td><span className="muted">—</span></td>
-                          <DealNos deals={[r]} />
-                          {cells([], [r], true)}
-                          <td className="num">—</td>
-                          <td>—</td>
-                          <td />
-                        </tr>
-                      ))
-                    : []),
-                ];
-              })}
-              {isVay
-                ? outside.map((r) => {
-                    const ps = sortPassengers(r.deal.passengers);
-                    return (
-                      <tr key={r.deal.id} className="warn">
-                        <td>
-                          {ps.map((p) => (
-                            <div key={p.id}>
-                              <span className={p.is_titular ? "strong" : undefined}>{p.name}</span>
-                              {p.is_titular && ps.length > 1 ? <span className="sub"> · titular</span> : null}
-                              <div className="sub">{p.email || p.phone}</div>
-                            </div>
-                          ))}
-                          <div style={{ marginTop: 6 }}><Badge tone="yellow">Fora da lista do parceiro</Badge></div>
-                        </td>
-                        <td><Badge tone="purple" dot>{stageOf("fechado").label}</Badge></td>
-                          <td><span className="muted">—</span></td>
-                        <DealNos deals={[r]} />
-                        {cells([r], [], true)}
-                        <td className="num strong">{brl(r.com.total)}</td>
-                        <td>Fechado em {fmtDate(r.deal.closed_on)}<div className="sub">Negócio marcado com o afiliado no HubSpot.</div></td>
-                        <td />
-                      </tr>
-                    );
-                  })
-                : null}
-              {t.clients.length === 0 && (!isVay || outside.length === 0) ? (
-                <tr>
-                  <td colSpan={isVay ? 10 : 9} className="empty">
-                    {isVay
-                      ? "O parceiro ainda não cadastrou clientes nesta expedição."
-                      : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <ClientsTable
+          rows={tableRows}
+          isVay={isVay}
+          earnHeader={isVay ? "Comissão" : "Seu ganho"}
+          stageOptions={STAGES.map((x) => ({ value: x.id, label: x.label }))}
+          manualStageOptions={[{ value: "auto", label: "Não contactado" }, ...STAGES.filter((x) => x.manual).map((x) => ({ value: x.id, label: x.label }))]}
+          vayUsers={vayUsers.map((u) => ({ value: u.id, label: u.name }))}
+          expName={exp.name}
+          emptyText={isVay ? "O parceiro ainda não cadastrou clientes nesta expedição." : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}
+          initialClient={sp.cliente}
+        />
         {!isVay && outside.length ? (
-          <p className="small muted" style={{ padding: "14px 24px", borderTop: "1px solid var(--border-subtle)" }}>
+          <p className="small muted" style={{ padding: "12px 18px", borderTop: "1px solid var(--border-subtle)" }}>
             Inclui {outside.length} {outside.length === 1 ? "venda atribuída" : "vendas atribuídas"} pela Vay Agora a esta expedição para clientes que não estão na sua lista · seu ganho: {brl(outsideCom)}.
           </p>
         ) : null}

@@ -131,36 +131,33 @@ export async function importClients(expId: string, _: FormState, f: FormData): P
   }
 }
 
-// Acompanhamento do contato pela Vay: status, responsável, observação para o parceiro e nota interna.
-// A observação para o parceiro só pode ser escrita aqui enquanto o cliente não tem negócio no HubSpot;
-// depois disso, ela é lançada no negócio (campo "Observações para parceiro").
+// Status do contato que a Vay marca no sistema ("auto" = não contactado).
 const CONTACT_STAGES = ["auto", "tentando", "em_contato", "chamar_depois", "nao_contactar", "outro_lugar"];
 
-export async function saveFollowUp(clientId: string, _: FormState, f: FormData): Promise<FormState> {
+// Etapa e responsável editados na própria linha da tabela (protótipo v37). Só a Vay.
+export async function setClientStage(clientId: string, stage: string): Promise<FormState> {
   await requireVay();
-  const stage = str(f, "stage");
-  const note = str(f, "note");
-  const ownerId = str(f, "owner_id") || null;
-  const partnerNote = str(f, "partner_note");
-  if (!CONTACT_STAGES.includes(stage)) return { error: "Status inválido." };
+  if (!CONTACT_STAGES.includes(stage)) return { error: "Etapa inválida." };
   const supabase = await createClient();
-  const { data: c, error: cErr } = await supabase.from("clients").select("partner_note, hs_status").eq("id", clientId).single();
-  if (cErr || !c) return { error: "Cliente não encontrado." };
-  const locked = c.hs_status !== null;
-  if (locked && f.has("partner_note") && partnerNote !== c.partner_note)
-    return { error: "Este cliente já tem negócio no HubSpot: lance a observação no campo “Observações para parceiro” do negócio." };
+  const { error } = await supabase.from("clients").update({ stage, last_follow_up: todayIso() }).eq("id", clientId);
+  if (error) return { error: "Não foi possível salvar a etapa." };
+  revalidatePath("/", "layout");
+  return { ok: "Etapa salva." };
+}
+
+export async function setClientOwner(clientId: string, ownerId: string | null): Promise<FormState> {
+  await requireVay();
+  const supabase = await createClient();
   let ownerName = "";
   if (ownerId) {
     const { data: p } = await supabase.from("profiles").select("full_name, email, role").eq("id", ownerId).single();
     if (!p || p.role !== "vay") return { error: "Responsável inválido." };
     ownerName = p.full_name || p.email;
   }
-  const patch: Record<string, unknown> = { stage, note, owner_id: ownerId, owner_name: ownerName, last_follow_up: todayIso() };
-  if (!locked) patch.partner_note = partnerNote;
-  const { error } = await supabase.from("clients").update(patch).eq("id", clientId);
-  if (error) return { error: "Não foi possível salvar." };
+  const { error } = await supabase.from("clients").update({ owner_id: ownerId, owner_name: ownerName }).eq("id", clientId);
+  if (error) return { error: "Não foi possível salvar o responsável." };
   revalidatePath("/", "layout");
-  return { ok: "Salvo. O parceiro já vê a atualização." };
+  return { ok: "Responsável salvo." };
 }
 
 // Comentário sobre o cliente (protótipo v37). Só a Vay; o autor vem da sessão, não do formulário.
