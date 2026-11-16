@@ -1,12 +1,8 @@
 import { redirect } from "next/navigation";
-import { PartnerDashboard } from "@/components/PartnerDashboard";
-import { loadWorld, requireSession } from "@/lib/data";
 
-export const metadata = { title: "Painel" };
-
+// O painel do parceiro foi unido à aba Expedições (ganhos no topo, expedições abaixo).
 export default async function PainelPage({ searchParams }: { searchParams: Promise<{ ano?: string; tri?: string }> }) {
-  const s = await requireSession();
-  if (s.isVay) redirect("/visao-geral");
-  const [world, sp] = await Promise.all([loadWorld(), searchParams]);
-  return <PartnerDashboard partner={s.partner!} world={world} isVay={false} year={sp.ano} quarter={sp.tri} basePath="/painel" />;
+  const sp = await searchParams;
+  const q = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => !!e[1])).toString();
+  redirect(q ? `/expedicoes?${q}` : "/expedicoes");
 }

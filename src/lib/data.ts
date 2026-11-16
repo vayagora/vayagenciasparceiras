@@ -44,7 +44,7 @@ export async function requireSession(): Promise<Session> {
 
 export async function requireVay(): Promise<Session> {
   const s = await requireSession();
-  if (!s.isVay) redirect("/painel");
+  if (!s.isVay) redirect("/expedicoes");
   return s;
 }
 

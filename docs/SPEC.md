@@ -157,7 +157,7 @@ Por cliente: etapa e nota. Salvar grava a data (fuso America/Sao_Paulo). Compras
 ## 5. Telas
 
 > **Navegação e telas atuais: protótipo v37** (canvas "Vay Agora — Expedições com parceiros"). Onde os itens abaixo divergirem, vale este resumo:
-> - **Parceiro**: menu Painel (só o bloco "Ganhos": saldo, ganhos do período, negócios fechados, clientes cadastrados e ganhos por produto), Expedições (lista empilhada + "Iniciar expedição"), Extrato e Acordo de parceria (resumo + "Ver redação completa", que abre o PDF).
+> - **Parceiro**: menu Expedições, Extrato e Acordo de parceria. A aba **Expedições** junta o painel e as expedições, igual à tela do parceiro na Vay: no topo o bloco "Ganhos" (saldo, ganhos do período, negócios fechados, clientes cadastrados e ganhos por produto), abaixo a lista empilhada de expedições com "Iniciar expedição". O Acordo de parceria tem o resumo + "Ver redação completa", que abre o PDF.
 > - **Vay**: menu Visão geral (KPIs, conferência, resultado por parceiro e todas as expedições) e Parceiros (um por linha; "Novo parceiro" em modal). No painel de cada parceiro: bloco "Ganhos", botão do acordo e as expedições dele, com "Iniciar expedição".
 > - **Tabela de clientes** (expedição): busca, filtros de etapa e responsável, ordenação A–Z/Z–A, exportar para Excel (linhas filtradas); etapa e responsável editáveis na linha pela Vay; observação em uma linha que abre o modal de comentários; coluna Cliente congelada.
 

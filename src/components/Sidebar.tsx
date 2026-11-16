@@ -15,7 +15,6 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
         { href: "/parceiros", label: "Parceiros" },
       ]
     : [
-        { href: "/painel", label: "Painel" },
         { href: "/expedicoes", label: "Expedições" },
         { href: "/extrato", label: "Extrato" },
         { href: "/acordo", label: "Acordo de parceria" },

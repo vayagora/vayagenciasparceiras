@@ -3,5 +3,5 @@ import { requireSession } from "@/lib/data";
 
 export default async function Home() {
   const s = await requireSession();
-  redirect(s.isVay ? "/visao-geral" : "/painel");
+  redirect(s.isVay ? "/visao-geral" : "/expedicoes");
 }
