@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui";
 import { addMoney, expStatus, isDone, ZERO } from "@/lib/commission";
 import { cityLabel } from "@/lib/cities";
@@ -16,6 +17,8 @@ export default async function ExpeditionsPage({
   searchParams: Promise<{ parceiro?: string; nova?: string; finalizadas?: string }>;
 }) {
   const s = await requireSession();
+  // A Vay vê as expedições na Visão geral e no painel de cada parceiro (protótipo v37).
+  if (s.isVay) redirect("/visao-geral");
   const [world, sp] = await Promise.all([loadWorld(), searchParams]);
   const filter = s.isVay && sp.parceiro ? sp.parceiro : "all";
   const list = world.exps.filter((e) => filter === "all" || e.partner_id === filter);

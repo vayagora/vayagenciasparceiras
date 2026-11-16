@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
 import { PartnerDashboard } from "@/components/PartnerDashboard";
 import { loadWorld, requireVay } from "@/lib/data";
-import { InvitePartnerUser } from "../forms";
-import { AgreementManager } from "./AgreementManager";
 
 export const metadata = { title: "Painel do parceiro" };
 
@@ -11,23 +9,21 @@ export default async function PartnerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ ano?: string; tri?: string }>;
+  searchParams: Promise<{ ano?: string; tri?: string; nova?: string }>;
 }) {
   await requireVay();
   const [{ id }, sp, world] = await Promise.all([params, searchParams, loadWorld()]);
   const partner = world.partners.find((p) => p.id === id);
   if (!partner) notFound();
   return (
-    <>
-      <PartnerDashboard partner={partner} world={world} isVay year={sp.ano} quarter={sp.tri} basePath={`/parceiros/${id}`} />
-      <AgreementManager partnerId={partner.id} name={partner.agreement_name ?? null} />
-      <section className="card pad stack">
-        <h2 className="section-title">Acesso do parceiro</h2>
-        <p className="muted small">
-          Afiliado no HubSpot: <strong>{partner.afiliado}</strong>. Convide outra pessoa da agência para acessar o portal.
-        </p>
-        <InvitePartnerUser partnerId={partner.id} />
-      </section>
-    </>
+    <PartnerDashboard
+      partner={partner}
+      world={world}
+      isVay
+      year={sp.ano}
+      quarter={sp.tri}
+      basePath={`/parceiros/${id}`}
+      newExpedition={!!sp.nova}
+    />
   );
 }

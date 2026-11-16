@@ -7,17 +7,27 @@ import type { Partner } from "@/lib/types";
 import { createExpedition } from "../actions";
 import { Tip } from "@/components/ui";
 
-export function NewExpeditionForm({ partners }: { partners?: Partner[] }) {
+// fixedPartnerId: parceiro já definido (Vay, dentro do painel do parceiro), sem select.
+export function NewExpeditionForm({
+  partners,
+  fixedPartnerId,
+  cancelHref = "/expedicoes",
+}: {
+  partners?: Partner[];
+  fixedPartnerId?: string;
+  cancelHref?: string;
+}) {
   const [state, action, pending] = useActionState(createExpedition, undefined);
   return (
-    <section className="panel stack">
+    <section className="panel stack" id="nova-expedicao">
       <div className="ttl">
         <h2 className="section-title">Iniciar uma expedição</h2>
         <Tip>Informe o essencial. Depois você cadastra os clientes e a Vay Agora cuida do restante.</Tip>
       </div>
       <form action={action} className="form">
         <div className="form-grid">
-          {partners ? (
+          {fixedPartnerId ? <input type="hidden" name="partner_id" value={fixedPartnerId} /> : null}
+          {partners && !fixedPartnerId ? (
             <div className="field">
               <label htmlFor="ne-partner">Parceiro</label>
               <select id="ne-partner" name="partner_id" className="select" required defaultValue="">
@@ -57,7 +67,7 @@ export function NewExpeditionForm({ partners }: { partners?: Partner[] }) {
         {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
         <div className="row">
           <button type="submit" className="btn primary" disabled={pending}>Criar expedição</button>
-          <Link href="/expedicoes" className="btn ghost">Cancelar</Link>
+          <Link href={cancelHref} className="btn ghost">Cancelar</Link>
         </div>
         <AirportOptions />
       </form>

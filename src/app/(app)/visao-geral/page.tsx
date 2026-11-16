@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { addMoney, stageOf, ZERO } from "@/lib/commission";
+import { addMoney, ZERO } from "@/lib/commission";
 import { loadWorld, requireVay } from "@/lib/data";
 import { brl, fmtDateTime, plural } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { ExpeditionList } from "@/components/ExpeditionList";
 import { SyncButton } from "./SyncButton";
 
 export const metadata = { title: "Visão geral" };
 
 export default async function OverviewPage() {
   await requireVay();
-  const { partners, exps, clients, ledger } = await loadWorld();
+  const world = await loadWorld();
+  const { partners, exps, clients, ledger } = world;
   const supabase = await createClient();
   const { data: lastRun } = await supabase
     .from("sync_runs")
@@ -24,7 +26,6 @@ export default async function OverviewPage() {
       ? `Última tentativa ${fmtDateTime(lastRun.started_at)} falhou: ${lastRun.error ?? "erro"}`
       : `Última sincronização: ${fmtDateTime(lastRun.started_at)}`;
   const partnerById = new Map(partners.map((p) => [p.id, p]));
-  const expById = new Map(exps.map((e) => [e.id, e]));
 
   const total = ledger.paid.reduce((a, r) => addMoney(a, r.com), ZERO);
   const pending = clients.filter((c) => ["novo", "negociacao"].includes(ledger.shownStage(c)));
@@ -110,36 +111,15 @@ export default async function OverviewPage() {
         </div>
       </section>
 
-      <section className="card">
-        <div className="card-head">
+      <section className="stack exp-sec" aria-label="Expedições">
+        <div className="sec-head">
           <div className="ttl">
-            <h2 className="section-title">Follow-ups pendentes</h2>
-            <Tip>Clientes cadastrados pelos parceiros que ainda não compraram: não contactados ou em negociação no HubSpot.</Tip>
+            <h2 className="section-title">Expedições</h2>
+            <Badge tone="neutral">{exps.length}</Badge>
+            <Tip>Para iniciar uma expedição, entre no parceiro.</Tip>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="tbl" style={{ minWidth: 860 }}>
-            <thead>
-              <tr><th>Cliente</th><th>Expedição</th><th>Etapa</th><th>Observação</th><th>Ação</th></tr>
-            </thead>
-            <tbody>
-              {pending.map((c) => {
-                const e = expById.get(c.expedition_id);
-                const st = stageOf(ledger.shownStage(c));
-                return (
-                  <tr key={c.id}>
-                    <td><span className="strong">{c.name}</span><div className="sub">{c.phone || c.email}</div></td>
-                    <td>{e?.name}<div className="sub">{e ? partnerById.get(e.partner_id)?.name : ""}</div></td>
-                    <td><Badge tone={st.tone} dot>{st.label}</Badge></td>
-                    <td>{c.hs_note || c.partner_note || <span className="muted">—</span>}</td>
-                    <td><Link href={`/expedicoes/${c.expedition_id}?cliente=${c.id}`} className="btn secondary sm">Atualizar</Link></td>
-                  </tr>
-                );
-              })}
-              {pending.length === 0 ? <tr><td colSpan={5} className="empty">Nenhum follow-up pendente.</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
+        <ExpeditionList exps={exps} world={world} isVay showPartner emptyText="Nenhuma expedição ainda." />
       </section>
     </>
   );

@@ -12,7 +12,6 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
   const items: Item[] = isVay
     ? [
         { href: "/visao-geral", label: "Visão geral" },
-        { href: "/expedicoes", label: "Expedições" },
         { href: "/parceiros", label: "Parceiros" },
       ]
     : [
@@ -25,7 +24,7 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
     <aside className={`sidebar ${isVay ? "vay" : "parceiro"}`}>
       <div className="brand">
         <Image src="/brand/logo-tipografico-porcelana.png" alt="Vay Agora" width={150} height={45} style={{ width: 150, height: "auto" }} priority />
-        <span>{isVay ? "Painel interno" : "Portal da agência"}</span>
+        <span>{isVay ? "Sistema de Agências Parceiras" : "Portal da agência"}</span>
       </div>
       <nav aria-label="Menu principal">
         {items.map((it) =>
