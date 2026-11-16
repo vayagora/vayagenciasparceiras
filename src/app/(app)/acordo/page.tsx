@@ -91,7 +91,7 @@ export default async function AcordoPage() {
             <li>Vender e entregar a experiência principal (expedição, evento, intercâmbio ou viagem em grupo).</li>
             <li>Avisar a Vay Agora sempre que uma viagem ou grupo for confirmado.</li>
             <li>Repassar aos clientes a estimativa do aéreo enviada pela Vay Agora, deixando claro que o valor final depende da cotação na compra.</li>
-            <li>Enviar à Vay Agora os contatos dos clientes com viagem confirmada.</li>
+            <li>Enviar à Vay Agora os contatos dos clientes com viagem confirmada que querem ser contatados para receber a cotação de passagem para a expedição.</li>
           </ul>
         </section>
         <section className="card pad stack" style={{ gap: 8 }}>
