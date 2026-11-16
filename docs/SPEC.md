@@ -10,7 +10,7 @@ Versão 2.0 · baseada no protótipo aprovado (canvas "Vay Agora — Expediçõe
 3. **Lista de clientes da expedição** = passageiros desses negócios cujo roteiro combina com a expedição (destino e data, §4.4). Uma linha por pessoa (contato do HubSpot; sem contato, nome completo); valores e comissão uma vez por negócio, na linha do titular (ou do primeiro passageiro que viaja).
 4. **Etapa do cliente** = etapa do negócio no HubSpot: Pré Cotação / Realizar Cotação → **Em contato**; demais etapas em aberto → **Em negociação**; Emissão Realizada → **Compra concluída**; Negócio perdido → **Não comprou**. Com vários negócios, vale a mais avançada. A observação é o campo "Observações para parceiro" do negócio.
 5. **Vínculo sempre automático.** Mais de uma expedição compatível → a de maior pontuação (aviso só informativo); aproximação → informativo. Pendências da Vay (corrigir no HubSpot): negócio **não sinalizado** compatível com uma expedição (ganho ou em aberto) e negócio da agência **sem expedição compatível**. Corrigido no HubSpot, sai da pendência na próxima sincronização. Só remunera negócio **ganho** vinculado.
-6. **Fechamento por expedição.** Os créditos só entram no saldo quando a Vay **finaliza a expedição** (botão "Finalizar expedição", disponível depois da data de fim), confirmando que ela aconteceu. O sistema calcula o ganho dos negócios ganhos vinculados e lança **um** crédito no extrato ("Créditos da expedição …", migração 0013, um por expedição). Depois disso o valor não muda (período fechado). Antes, o ganho aparece como **"a liberar"**.
+6. **Fechamento por expedição (substitui a apuração trimestral do acordo, cláusula 4.3).** Os créditos só entram no saldo quando a Vay **finaliza a expedição** (botão "Finalizar expedição", disponível depois da data de fim), confirmando que ela aconteceu. O sistema calcula o ganho dos negócios ganhos vinculados e lança **um** crédito no extrato ("Créditos da expedição …", migração 0013, um por expedição). Depois disso o valor não muda (período fechado). Antes, o ganho aparece como **"a liberar"**.
 7. **Expedições**: só a Vay cria (no painel do parceiro). O parceiro só vê.
 8. **Ainda a definir:** saídas (uso dos créditos) e ajuste de cashback de pagamento misto. Por enquanto, misto fica com cashback R$ 0 e aviso informativo; lançamentos manuais antigos continuam no extrato.
 
@@ -82,7 +82,7 @@ O acordo de parceria padrão é o PDF "Regras de Negócio Padrões"; a Vay pode 
 - **Negócio HubSpot** (espelho): ID, afiliado, data de fechamento, roteiro (trechos: cidade + data de chegada), data de volta, valores de voo/hospedagem/seguro.
 - **Passageiro do negócio** (espelho das associações negócio → contato no HubSpot): negócio, ID do contato, nome, e-mail, telefone, `titular` (sim/não). Relação **muitos para muitos**: um negócio pode ter vários passageiros e um passageiro pode estar em vários negócios. Cada negócio tem exatamente um titular.
 - **Vínculo negócio → expedição**: expedição (ou nenhuma), método (`auto` | `manual`), motivo (texto), sinalizações, conferido por/em.
-- **Fechamento de período**: trimestre, parceiro, valores congelados.
+- **Fechamento da expedição** (SPEC 2.0): expedição, quem finalizou e quando; crédito lançado no extrato (um por expedição), valor congelado.
 
 Etapa do cliente (SPEC 1.4). O **acompanhamento do contato é feito pela Vay no sistema**; a **venda vem do HubSpot**:
 
@@ -238,7 +238,7 @@ Textos de apoio ficam em tooltips (ícone "i").
 
 - Fuso de referência: America/Sao_Paulo (UTC−3) para "hoje", trimestres e expedições finalizadas.
 - Moeda BRL, formato pt-BR. Comissão calculada sobre o valor de cada produto do negócio, **uma vez por negócio**, independentemente do número de passageiros. O cashback editado pela Vay substitui o calculado.
-- Fechamento trimestral congela valores; alterações posteriores no HubSpot geram ajuste no período seguinte, nunca reescrevem período fechado.
+- **Fechamento por expedição** (não mais trimestral): ao finalizar a expedição, o crédito é lançado e congelado; alterações posteriores no HubSpot não reescrevem uma expedição finalizada. O filtro Ano/Trimestre do painel é só uma forma de ver os ganhos por data de fechamento do negócio, não um período de apuração.
 - LGPD: aceite do termo de compartilhamento de dados no primeiro acesso do parceiro; log de acesso/alteração.
 - Linguagem: "Vay Agora" sempre assim; tom do design system (você / a gente).
 
@@ -264,4 +264,4 @@ Textos de apoio ficam em tooltips (ícone "i").
 **Fase 3 — Painéis e pagamento**
 - Painel do parceiro com filtros; padrão = último trimestre concluído (UTC−3).
 - Visão geral Vay, painel do parceiro na visão Vay.
-- Fechamento trimestral e exportação CSV das comissões por parceiro (uma linha por negócio, com a lista de passageiros).
+- Fechamento por expedição (botão "Finalizar expedição", Vay) e exportação CSV das comissões por parceiro (uma linha por negócio, com a lista de passageiros).

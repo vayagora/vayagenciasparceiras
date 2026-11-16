@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { Tip } from "@/components/ui";
 import { pct, RATES } from "@/lib/commission";
 import { requireSession } from "@/lib/data";
-import { quarterOf, todayIso } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Acordo de parceria" };
@@ -17,13 +16,6 @@ export default async function AcordoPage() {
   const { data: p } = await supabase.from("partners").select("agreement_path, agreement_name").eq("id", s.partner.id).maybeSingle();
   const custom = !!p?.agreement_path;
   const name = custom ? p?.agreement_name || "Acordo próprio" : "Acordo padrão · Regras de Negócio Padrões";
-  const now = quarterOf(todayIso()).q;
-  const quarters = [
-    { q: 1, label: "1º trimestre (jan–mar)", due: "até 10 de abril" },
-    { q: 2, label: "2º trimestre (abr–jun)", due: "até 10 de julho" },
-    { q: 3, label: "3º trimestre (jul–set)", due: "até 10 de outubro" },
-    { q: 4, label: "4º trimestre (out–dez)", due: "até 10 de janeiro" },
-  ];
   const rates = [
     { pct: pct(RATES.voo), label: "Passagens aéreas", bg: "var(--blue-50)", fg: "var(--blue-700)" },
     { pct: pct(RATES.hotel), label: "Hospedagem", bg: "var(--purple-50)", fg: "var(--purple-700)" },
@@ -81,17 +73,14 @@ export default async function AcordoPage() {
             <li>Saldo e movimentações ficam no seu <Link href="/extrato">extrato</Link>.</li>
           </ul>
         </section>
-        <section className="card pad stack" style={{ gap: 4 }}>
+        <section className="card pad stack" style={{ gap: 8 }}>
           <h2 className="section-title">Quando é apurado</h2>
-          <span className="small muted">Trimestralmente, com relatório detalhado.</span>
-          <div>
-            {quarters.map((x) => (
-              <div key={x.q} className={`qrow${x.q === now ? " next" : ""}`}>
-                <span>{x.label}{x.q === now ? " · trimestre atual" : ""}</span>
-                <span>{x.due}</span>
-              </div>
-            ))}
-          </div>
+          <ul className="agr-list">
+            <li><strong>Por expedição</strong>, depois que ela termina.</li>
+            <li>A Vay Agora confirma que a expedição aconteceu e lança os créditos dela no seu extrato, de uma vez.</li>
+            <li>Até lá, o valor aparece como <strong>“a liberar”</strong> na expedição e no extrato.</li>
+            <li>Depois de lançado, o valor da expedição não muda.</li>
+          </ul>
         </section>
       </div>
 

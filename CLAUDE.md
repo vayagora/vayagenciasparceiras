@@ -18,7 +18,7 @@ Leia `docs/SPEC.md` antes de qualquer tarefa. Ela é a fonte da verdade das regr
 4. Negócio de agência = "Origem do Negócio" "Agência Parceira" (ou "Afiliado") + empresa da agência associada, em qualquer etapa. A lista de clientes da expedição são os passageiros desses negócios (só contatos com rótulo "Passageiro"; comprador que não viaja não entra), agrupados por contato do HubSpot ou nome completo (`Ledger.lines` em `src/lib/ledger.ts`). O parceiro vê os passageiros dos negócios da própria agência (RLS `passenger_visible_to_partner`, migração 0013).
 5. Forma de pagamento: dinheiro gera cashback; 100% "Crédito na VAY" não gera; misto fica a definir (R$ 0) até decisão sobre o fluxo no HubSpot.
 6. O parceiro nunca vê sinalizações, negócios não sinalizados nem dados de negócios de outra agência.
-7. Fuso de referência America/Sao_Paulo (`src/lib/format.ts`: `todayIso`, trimestres). Painel do parceiro abre no último trimestre concluído.
+7. Fuso de referência America/Sao_Paulo (`src/lib/format.ts`: `todayIso`, trimestres). Painel do parceiro abre no último trimestre concluído (filtro de visualização; a apuração é por expedição, não trimestral).
 8. Período fechado nunca é reescrito: expedição finalizada mantém o crédito lançado, mesmo que o HubSpot mude.
 9. Segredos só em variáveis de ambiente (`.env.local`); nunca no código nem em logs.
 10. Valores e comissão são do negócio, não do passageiro: aparecem uma vez por negócio (linha principal) e todo total soma por negócio, nunca por linha (SPEC §5).

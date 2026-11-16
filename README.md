@@ -1,6 +1,6 @@
 # Vay Agora · Agências parceiras
 
-Portal em que agências parceiras criam expedições, cadastram clientes e acompanham as comissões sobre as vendas da Vay Agora. A equipe Vay acompanha todos os parceiros, registra follow-ups e confere os negócios.
+Portal de visualização: as agências parceiras acompanham suas expedições, os clientes e as comissões sobre as vendas da Vay Agora; a equipe Vay acompanha todos os parceiros. Todo lançamento é feito no HubSpot (SPEC 2.0).
 
 O protótipo original está no claude.ai: *Vay Agora — Expedições com parceiros*.
 
@@ -8,12 +8,12 @@ O protótipo original está no claude.ai: *Vay Agora — Expedições com parcei
 
 | Quem | O que vê e faz |
 |---|---|
-| **Agência parceira** | Painel com ganhos por trimestre, cria expedições, cadastra clientes (um a um ou por planilha CSV/colada do Excel) e acompanha a etapa de cada cliente. Só vê os próprios dados. |
-| **Equipe Vay Agora** | Visão geral de todos os parceiros, follow-ups pendentes, atualização de etapa e nota de cada cliente, conciliação dos negócios fechados, cadastro de parceiros e convites de acesso. |
+| **Agência parceira** | Vê as próprias expedições, os clientes (passageiros dos negócios da agência no HubSpot) com a etapa de cada um, os ganhos e o extrato. Só vê os próprios dados; não lança nada. |
+| **Equipe Vay Agora** | Visão geral de todos os parceiros, negócios a corrigir no HubSpot, criação de expedições, **finalização de cada expedição** (libera os créditos no extrato) e cadastro de parceiros. |
 
-**Comissões:** Passagem aérea 3% · Hospedagem 3% · Seguro viagem 5%, pagas em créditos na Vay Agora (acordo padrão em `public/docs/regras-de-negocio-padrao.pdf`).
+**Comissões:** Passagem aérea 3% · Hospedagem 3% · Seguro viagem 5%, pagas em créditos na Vay Agora e apuradas **por expedição**: os créditos entram no extrato quando a Vay finaliza a expedição (acordo padrão em `public/docs/regras-de-negocio-padrao.pdf`).
 
-**Vínculo automático negócio → expedição:** mesmo afiliado + viagem entre 7 dias antes e 3 dias depois da expedição + cidade da expedição em algum trecho (ou uma cidade a até 700 km). Casos aproximados, com mais de uma expedição possível, ou de clientes fora da lista do parceiro aparecem para conferência manual na tela da expedição.
+**Vínculo automático negócio → expedição:** mesma agência (empresa associada no HubSpot) + viagem entre 7 dias antes e 3 dias depois da expedição + cidade da expedição em algum trecho (ou uma cidade a até 700 km). Negócios a corrigir no HubSpot aparecem para a Vay na tela da expedição.
 
 ## Tecnologia
 
