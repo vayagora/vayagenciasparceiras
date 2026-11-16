@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { Ledger } from "./ledger";
 import { createClient } from "./supabase/server";
-import type { BalanceEntry, CashbackChange, Client, Deal, DealNote, Expedition, Partner, Passenger, Profile } from "./types";
+import type { BalanceEntry, CashbackChange, Client, ClientComment, Deal, DealNote, Expedition, Partner, Passenger, Profile } from "./types";
 
 export type Session = {
   profile: Profile;
@@ -56,6 +56,7 @@ export type World = {
   notes: DealNote[];
   entries: BalanceEntry[];
   cashbackHistory: CashbackChange[];
+  comments: ClientComment[];
   ledger: Ledger;
 };
 
@@ -63,7 +64,7 @@ export type World = {
 export const loadWorld = cache(async (): Promise<World> => {
   const supabase = await createClient();
   // deal_passengers: o parceiro só recebe os passageiros que ele cadastrou (RLS).
-  const [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory] = await Promise.all([
+  const [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("clients").select("*").order("created_at"),
@@ -73,8 +74,10 @@ export const loadWorld = cache(async (): Promise<World> => {
     supabase.from("balance_entries").select("*").order("entry_date"),
     // Só a Vay recebe linhas (RLS); para o parceiro vem vazio.
     supabase.from("deal_cashback_history").select("*").order("changed_at", { ascending: false }),
+    // Parceiro recebe só os públicos dos próprios clientes (RLS)
+    supabase.from("client_comments").select("*").order("created_at"),
   ]);
-  for (const r of [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory]) {
+  for (const r of [partners, exps, clients, deals, passengers, notes, entries, cashbackHistory, comments]) {
     if (r.error) throw new Error(r.error.message);
   }
   const byDeal = new Map<string, Passenger[]>();
@@ -97,6 +100,7 @@ export const loadWorld = cache(async (): Promise<World> => {
     })),
     notes: (notes.data ?? []) as DealNote[],
     entries: ((entries.data ?? []) as BalanceEntry[]).map((e) => ({ ...e, amount: Number(e.amount) })),
+    comments: (comments.data ?? []) as ClientComment[],
     cashbackHistory: ((cashbackHistory.data ?? []) as CashbackChange[]).map((h) => ({
       ...h,
       old_value: h.old_value === null ? null : Number(h.old_value),

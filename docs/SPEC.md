@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.4 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.5 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.5:** comentários por cliente (públicos ou internos, com data, hora e autor) no lugar da observação escrita no sistema e da nota interna; a observação principal é a do HubSpot. Afeta §3 e §5.
 
 **Mudanças na 1.4:** acompanhamento do contato no sistema (status do contato e responsável marcados pela Vay); observação para o parceiro escrita no sistema até existir negócio, e depois só pelo campo "Observações para parceiro" do negócio no HubSpot. Afeta §3 e §5.
 
@@ -75,7 +77,11 @@ Etapa do cliente (SPEC 1.4). O **acompanhamento do contato é feito pela Vay no 
 
 Para cada cliente a Vay também registra no sistema o **Responsável** (quem da equipe Vay está fazendo o contato; o parceiro vê o nome).
 
-**Observação para o parceiro:** enquanto o cliente **não tem negócio** no HubSpot, a Vay escreve a observação no sistema. Quando passa a ter (em negociação ou compra concluída), o sistema mostra as duas — a escrita no sistema (se houver) e o campo "Observações para parceiro" do(s) negócio(s) no HubSpot — e **trava** a do sistema, para que as novas sejam lançadas no HubSpot.
+**Observação e comentários (SPEC 1.5):**
+
+- **Observação principal** = campo "Observações para parceiro" do(s) negócio(s) do cliente no HubSpot. Aparece no topo, com a etiqueta "HubSpot".
+- **Comentários**: histórico por cliente, registrado pela Vay no sistema. Cada comentário tem data e hora (America/Sao_Paulo), autor (nome e e-mail de login, tirados da sessão) e é **para o parceiro** (público) ou **interno** (só a Vay). Não se edita nem se apaga.
+- O parceiro vê a observação do HubSpot e só os comentários **públicos** dos próprios clientes; não escreve comentários.
 
 Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, Celular ou WhatsApp).
 

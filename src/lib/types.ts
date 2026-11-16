@@ -139,6 +139,17 @@ export type DealNote = {
   created_at: string;
 };
 
+// Comentário sobre o cliente (histórico imutável). internal = só a Vay vê (RLS).
+export type ClientComment = {
+  id: string;
+  client_id: string;
+  body: string;
+  internal: boolean;
+  author_name: string;
+  author_email: string;
+  created_at: string;
+};
+
 export type CashbackChange = {
   id: string;
   deal_id: string;

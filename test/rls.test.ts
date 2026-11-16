@@ -128,6 +128,12 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0006_acordo.sql"));
     await db.query(sql("0007_pagamento_cashback.sql"));
     await db.query(sql("0008_contato_manual.sql"));
+    // notas antigas, para testar a conversão em comentários da 0009
+    await db.query(`
+      update clients set partner_note = 'Prefere janela', last_follow_up = '2026-10-01' where name = 'Gislaine Souza';
+      update clients set note = 'Nota interna da Bia' where name = 'Bia Lopes';
+    `);
+    await db.query(sql("0009_comentarios.sql"));
     await db.query(GRANTS);
   });
 
@@ -284,6 +290,45 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     expect(await as(ID.vay, () => rows(`select note from deal_cashback_history`))).toEqual([{ note: "misto" }]);
   });
 
+  it("0009 converte observação em comentário público e nota interna em comentário interno (e esvazia a nota)", async () => {
+    const r = await rows(
+      `select c.name, k.body, k.internal, k.author_name, k.created_at::date::text as d from client_comments k join clients c on c.id = k.client_id where c.name in ('Bia Lopes', 'Gislaine Souza') order by c.name`,
+    );
+    expect(r).toEqual([
+      { name: "Bia Lopes", body: "Nota interna da Bia", internal: true, author_name: "Vay Agora", d: expect.any(String) },
+      { name: "Gislaine Souza", body: "Prefere janela", internal: false, author_name: "Vay Agora", d: "2026-10-01" },
+    ]);
+    expect(await rows(`select count(*)::int as n from clients where note <> ''`)).toEqual([{ n: 0 }]);
+  });
+
+  it("comentários: parceiro lê só os públicos dos próprios clientes; não insere; ninguém altera", async () => {
+    const [gis] = await rows(`select id from clients where name = 'Gislaine Souza'`);
+    const [bia] = await rows(`select id from clients where name = 'Bia Lopes'`);
+    await db.query(
+      `insert into client_comments (client_id, body, internal, author_name, author_email) values
+        ($1, 'Interno da Gislaine', true, 'Ana', 'ana@vayagora.com.br'),
+        ($2, 'Público da Bia', false, 'Ana', 'ana@vayagora.com.br')`,
+      [gis.id, bia.id],
+    );
+    await as(ID.pa, async () => {
+      // parceiro A: só o público da própria cliente (nada interno, nada do parceiro B)
+      expect((await rows(`select body from client_comments order by body`)).map((x) => x.body)).toEqual(["Prefere janela"]);
+      await denied(`insert into client_comments (client_id, body, author_name, author_email) values ($1, 'x', 'x', 'x')`, [gis.id]);
+      await expect(db.query(`update client_comments set body = 'mudou'`)).resolves.toMatchObject({ rowCount: 0 });
+      await expect(db.query(`delete from client_comments`)).resolves.toMatchObject({ rowCount: 0 });
+    });
+    await as(ID.pb, async () => {
+      expect((await rows(`select body from client_comments`)).map((x) => x.body)).toEqual(["Público da Bia"]);
+    });
+    await as(ID.vay, async () => {
+      // os 2 inseridos aqui + os 4 convertidos pela 0009 (inclui notas antigas de outros clientes de teste)
+      expect(await rows(`select id from client_comments`)).toHaveLength(6);
+      await db.query(`insert into client_comments (client_id, body, internal, author_name, author_email) values ($1, 'Da Vay', true, 'V', 'v@x')`, [gis.id]);
+      await expect(db.query(`update client_comments set body = 'mudou'`)).resolves.toMatchObject({ rowCount: 0 });
+      await expect(db.query(`delete from client_comments`)).resolves.toMatchObject({ rowCount: 0 });
+    });
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
@@ -293,6 +338,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0006_acordo.sql"));
     await db.query(sql("0007_pagamento_cashback.sql"));
     await db.query(sql("0008_contato_manual.sql"));
+    await db.query(sql("0009_comentarios.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

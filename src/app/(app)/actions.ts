@@ -163,6 +163,26 @@ export async function saveFollowUp(clientId: string, _: FormState, f: FormData):
   return { ok: "Salvo. O parceiro já vê a atualização." };
 }
 
+// Comentário sobre o cliente (protótipo v37). Só a Vay; o autor vem da sessão, não do formulário.
+export async function addClientComment(clientId: string, body: string, internal: boolean): Promise<FormState> {
+  const s = await requireVay();
+  const text = body.trim();
+  if (!text) return { error: "Escreva o comentário." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("client_comments").insert({
+    client_id: clientId,
+    body: text,
+    internal,
+    author_id: s.profile.id,
+    author_name: s.profile.full_name || s.profile.email,
+    author_email: s.profile.email,
+  });
+  if (error) return { error: "Não foi possível salvar o comentário." };
+  await supabase.from("clients").update({ last_follow_up: todayIso() }).eq("id", clientId);
+  revalidatePath("/", "layout");
+  return { ok: internal ? "Comentário interno adicionado." : "Comentário adicionado. O parceiro já vê." };
+}
+
 // ---------------------------------------------------------------- Cashback editado pela Vay (SPEC 1.3)
 
 // value null = volta ao calculado pelas regras. Toda alteração vai para o histórico.
