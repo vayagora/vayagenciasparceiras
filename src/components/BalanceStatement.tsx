@@ -2,19 +2,21 @@ import Link from "next/link";
 import type { Statement } from "@/lib/balance";
 import { brl, fmtDate, plural } from "@/lib/format";
 import type { Partner } from "@/lib/types";
-import { AddEntryButton, DeleteEntryButton } from "./BalanceForms";
 import { Badge, Tip } from "./ui";
 
 // Extrato do saldo (mesmo padrão do Portal do Comissário): saldo em destaque, entradas, saídas e a lista.
 export function BalanceStatement({
   partner,
   statement,
+  toRelease,
   isVay,
   basePath,
   filter,
 }: {
   partner: Partner;
   statement: Statement;
+  // Ganho das expedições ainda não finalizadas
+  toRelease: { id: string; name: string; total: number }[];
   isVay: boolean;
   basePath: string;
   filter: "all" | "in" | "out";
@@ -30,12 +32,11 @@ export function BalanceStatement({
           <div className="ttl">
             <h1 className="page-title">Extrato</h1>
             <Tip>
-              As comissões dos negócios vinculados às suas expedições entram sozinhas. A equipe Vay Agora lança bonificações
-              (entradas) e o uso dos créditos (saídas).
+              Os créditos de cada expedição entram no saldo quando a equipe Vay Agora confirma que ela aconteceu
+              (fechamento da expedição). Até lá, aparecem como “a liberar”.
             </Tip>
           </div>
         </div>
-        {isVay ? <AddEntryButton partnerId={partner.id} partnerName={partner.name} balance={statement.balance} /> : null}
       </div>
 
       <section className="grid-kpi">
@@ -50,11 +51,38 @@ export function BalanceStatement({
           <div className="sub">{plural(statement.countIn, "entrada", "entradas")}</div>
         </div>
         <div className="card kpi">
-          <div className="label">Total gasto</div>
-          <div className="value">{brl(statement.totalOut)}</div>
-          <div className="sub">{plural(statement.countOut, "saída", "saídas")}</div>
+          <div className="label">A liberar</div>
+          <div className="value">{brl(toRelease.reduce((a, x) => a + x.total, 0))}</div>
+          <div className="sub">
+            {toRelease.length
+              ? `${plural(toRelease.length, "expedição aguardando", "expedições aguardando")} fechamento`
+              : "Nenhuma expedição aguardando fechamento"}
+          </div>
         </div>
       </section>
+
+      {toRelease.length ? (
+        <section className="card">
+          <div className="card-head">
+            <h2 className="section-title">A liberar</h2>
+          </div>
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr><th>Expedição</th><th className="num">Valor</th></tr>
+              </thead>
+              <tbody>
+                {toRelease.map((x) => (
+                  <tr key={x.id}>
+                    <td><Link href={`/expedicoes/${x.id}`}>{x.name}</Link></td>
+                    <td className="num">{brl(x.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card">
         <div className="card-head">
@@ -82,7 +110,6 @@ export function BalanceStatement({
                 <th>Origem</th>
                 <th className="num">Valor</th>
                 <th className="num">Saldo</th>
-                {isVay ? <th /> : null}
               </tr>
             </thead>
             <tbody>
@@ -97,11 +124,10 @@ export function BalanceStatement({
                   <td className="small muted">{r.origin}</td>
                   <td className={`num ${r.kind === "in" ? "amount-in" : "amount-out"}`}>{r.amount >= 0 ? "+ " : "− "}{brl(Math.abs(r.amount))}</td>
                   <td className="num muted">{brl(r.balance)}</td>
-                  {isVay ? <td>{r.entryId ? <DeleteEntryButton entryId={r.entryId} /> : null}</td> : null}
                 </tr>
               ))}
               {rows.length === 0 ? (
-                <tr><td colSpan={isVay ? 7 : 6} className="empty">Nenhum lançamento por aqui ainda.</td></tr>
+                <tr><td colSpan={6} className="empty">Nenhum lançamento por aqui ainda.</td></tr>
               ) : null}
             </tbody>
           </table>

@@ -1,9 +1,8 @@
-// Saldo do parceiro: comissões dos negócios vinculados (entram sozinhas) + lançamentos manuais da Vay
-// (entradas, como bonificações, e saídas, quando a agência usa os créditos). Saldo = entradas − saídas.
-import { PROD_LABEL, PRODUCTS } from "./commission";
+// Saldo do parceiro (SPEC 2.0): os créditos entram pelo fechamento de cada expedição, quando a Vay confirma
+// que ela aconteceu. Antes disso, o ganho da expedição aparece como "a liberar" e não entra no saldo.
+// Lançamentos manuais antigos (entradas e saídas) continuam no extrato. Saldo = entradas − saídas.
 import type { Ledger } from "./ledger";
-import { dealNo } from "./matching";
-import type { BalanceEntry, Partner } from "./types";
+import type { BalanceEntry, Expedition, Partner } from "./types";
 
 export type StatementRow = {
   key: string;
@@ -14,38 +13,27 @@ export type StatementRow = {
   origin: string;
   amount: number; // com sinal: + entrada, − saída
   balance: number; // saldo depois deste lançamento
-  entryId?: string; // lançamento manual (pode ser apagado pela Vay)
 };
 
 export type Statement = { rows: StatementRow[]; balance: number; totalIn: number; totalOut: number; countIn: number; countOut: number };
 
-export function buildStatement(partner: Partner, ledger: Ledger, entries: BalanceEntry[]): Statement {
+export function buildStatement(partner: Partner, entries: BalanceEntry[], exps: Expedition[] = []): Statement {
+  const expName = new Map(exps.map((e) => [e.id, e.name]));
   const items: Omit<StatementRow, "balance">[] = [];
-  for (const r of ledger.paid) {
-    if (r.partner?.id !== partner.id || r.com.total <= 0) continue;
-    const prods = PRODUCTS.filter((k) => Number(r.deal[k]) > 0).map((k) => PROD_LABEL[k]).join(" + ");
-    items.push({
-      key: `deal-${r.deal.id}`,
-      date: r.deal.closed_on,
-      kind: "in",
-      title: `Comissão · ${prods}`,
-      sub: r.exp ? r.exp.name : "",
-      origin: `HubSpot · negócio ${dealNo(r.deal)}`,
-      amount: Math.round(r.com.total * 100) / 100,
-    });
-  }
   for (const e of entries) {
     if (e.partner_id !== partner.id) continue;
     const v = Math.abs(Number(e.amount) || 0);
+    const closing = !!e.expedition_id;
     items.push({
       key: `entry-${e.id}`,
       date: e.entry_date,
       kind: e.kind,
       title: e.title,
-      sub: e.note,
-      origin: `Manual${e.created_by_name ? ` · ${e.created_by_name}` : ""}`,
+      sub: closing ? expName.get(e.expedition_id!) ?? e.note : e.note,
+      origin: closing
+        ? `Fechamento da expedição${e.created_by_name ? ` · ${e.created_by_name}` : ""}`
+        : `Manual${e.created_by_name ? ` · ${e.created_by_name}` : ""}`,
       amount: e.kind === "in" ? v : -v,
-      entryId: e.id,
     });
   }
   // Ordem cronológica para o saldo corrente; exibição do mais recente para o mais antigo.
@@ -65,4 +53,12 @@ export function buildStatement(partner: Partner, ledger: Ledger, entries: Balanc
     countIn: rows.filter((r) => r.kind === "in").length,
     countOut: rows.filter((r) => r.kind === "out").length,
   };
+}
+
+// Ganho das expedições ainda não finalizadas (a liberar), por expedição
+export function toRelease(partner: Partner, ledger: Ledger, exps: Expedition[]): { exp: Expedition; total: number }[] {
+  return exps
+    .filter((e) => e.partner_id === partner.id && !e.finished_at)
+    .map((e) => ({ exp: e, total: Math.round(ledger.earnings(e.id).total * 100) / 100 }))
+    .filter((x) => x.total > 0);
 }

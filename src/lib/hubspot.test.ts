@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
 import { airportShort, paymentMethods, phoneVariants, readDetails, readLegsAny, toTime } from "./hubspot";
-import { airportPlace, hubspotConfig, matchPartner, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
-import { clientHubspotStatus, linkContact, mapDeal, matchesSomeExpedition, planPassengers, type StatusDeal } from "./sync";
+import { airportPlace, hubspotConfig, isAgencyOrigem, matchPartner, stageKind, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
+import { mapDeal, matchesSomeExpedition, planPassengers } from "./sync";
 import type { Expedition } from "./types";
 
 const a = (contactId: string, order: number, labels: string[] = []): Association => ({ contactId, order, labels });
@@ -169,10 +169,54 @@ describe("conversões do negócio", () => {
     expect(money(null)).toBe(0);
   });
 
-  it("config padrão: Emissão Realizada + origem Afiliado", () => {
+  it("config padrão: Emissão Realizada + origem Agência Parceira ou Afiliado", () => {
     const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
     expect(cfg.wonStages).toEqual(["135525686"]);
-    expect([cfg.origemProp, cfg.origemValue]).toEqual(["origem_do_negocio", "Afiliado"]);
+    expect(cfg.lostStages).toEqual(["closedlost"]);
+    expect([cfg.origemProp, cfg.origemValues]).toEqual(["origem_do_negocio", ["Agência Parceira", "Afiliado"]]);
+  });
+
+  it("origem da agência: ignora acentos e maiúsculas", () => {
+    const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
+    expect(isAgencyOrigem(cfg, "Afiliado")).toBe(true);
+    expect(isAgencyOrigem(cfg, "agencia parceira")).toBe(true);
+    expect(isAgencyOrigem(cfg, "Passivo [ação do contato]")).toBe(false);
+    expect(isAgencyOrigem(cfg, null)).toBe(false);
+  });
+
+  it("etapa do negócio: ganho, em aberto, perdido ou fora do funil", () => {
+    const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
+    expect(stageKind(cfg, "135525686")).toBe("won");
+    expect(stageKind(cfg, "presentationscheduled")).toBe("open");
+    expect(stageKind(cfg, "closedlost")).toBe("lost");
+    expect(stageKind(cfg, "xyz")).toBeNull();
+  });
+
+  it("mapDeal: negócio em aberto sem serviço/valor entra com o roteiro, sem data de fechamento (caso Claudia)", () => {
+    const r = mapDeal(
+      {
+        id: "67368304817",
+        properties: {
+          dealname: "P-Claudia-GRU-PMI-IBZ-06/10-18/10-BICITRIP",
+          dealstage: "presentationscheduled",
+          origem_do_negocio: "Afiliado",
+          observacoes_para_parceiro: "Aguardando retorno",
+          aeroporto_de_partida: "PMI – Palma Mallorca, Spain,",
+          data_da_volta_: "2027-10-06",
+          aeroporto_de_chegada___trecho_2: "GRU – SP, Brasil – Guarulhos / F. Montoro,",
+          data_de_chegada___trecho_2: "2027-10-18",
+        },
+      },
+      "Bicitrip",
+    );
+    expect(r).toMatchObject({
+      row: { stage_kind: "open", hs_stage: "presentationscheduled", closed_on: null, voo: 0, end_date: "2027-10-18", partner_note: "Aguardando retorno" },
+    });
+  });
+
+  it("mapDeal: negócio ganho guarda a etapa", () => {
+    const r = mapDeal({ id: "1", properties: { ...aereo, dealstage: "135525686" } }, "JT Viajar e Correr");
+    expect(r).toMatchObject({ row: { stage_kind: "won", closed_on: "2026-07-20" } });
   });
 
   it("mapDeal: agência, fechamento e valor na coluna do produto", () => {
@@ -265,36 +309,7 @@ describe("detalhes do produto para o modal", () => {
   });
 });
 
-describe("etapa do cliente pelo HubSpot", () => {
-  const exp: Expedition = { id: "e1", partner_id: "p", name: "Tailândia", city: "Tailândia", start_date: "2026-12-01", days: 15, arrival_airport: "BKK", departure_airport: null, created_at: "" };
-  const legs = [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }];
-  const baroni = { name: "Baroni Henrique de Paula Frontzek", email: "", phone: "+55 (31) 99327-2968", hubspot_contact_id: null };
-  const person = { contactId: "242743641764", name: "Baroni Henrique de Paula Frontzek", email: "baroni@x.com", phone: "+5531993272968" };
-  const d = (id: string, kind: StatusDeal["kind"], over: Partial<StatusDeal> = {}): StatusDeal => ({ id, kind, legs, end_date: "2026-12-16", people: [person], ...over });
-
-  it("negócio ganho compatível → compra concluída (prevalece sobre o em aberto)", () => {
-    expect(clientHubspotStatus(baroni, exp, [d("1", "open"), d("2", "won")])).toMatchObject({ status: "fechado", dealId: "2" });
-  });
-  it("traz as observações dos negócios do cliente (ganho primeiro, sem repetir)", () => {
-    const r = clientHubspotStatus(baroni, exp, [d("1", "open", { note: "Cotando assento" }), d("2", "won", { note: "Emitido, bagagem inclusa" }), d("3", "open", { note: "Cotando assento" })]);
-    expect(r.note).toBe("Emitido, bagagem inclusa\n\nCotando assento");
-    expect(clientHubspotStatus(baroni, exp, []).note).toBe("");
-  });
-
-  it("só em aberto → em negociação", () => {
-    expect(clientHubspotStatus(baroni, exp, [d("1", "open")])).toMatchObject({ status: "negociacao", dealId: "1" });
-  });
-  it("negócio de outro destino ou de outra pessoa não conta", () => {
-    const paris = [{ city: "Paris", date: "2026-08-01", lat: 49, lng: 2.5 }];
-    expect(clientHubspotStatus(baroni, exp, [d("1", "won", { legs: paris, end_date: "2026-08-10" })]).status).toBeNull();
-    expect(clientHubspotStatus(baroni, exp, [d("1", "won", { people: [{ ...person, contactId: "9", name: "Outra Pessoa", phone: "" }] })]).status).toBeNull();
-  });
-  it("liga o cliente ao contato por e-mail ou, sem e-mail, por telefone", () => {
-    const people = [{ id: "7", email: "ana@x.com", phones: [], name: "Ana" }, { id: "8", email: "", phones: ["+5531993272968"], name: "Baroni" }];
-    expect(linkContact({ ...baroni, email: "ANA@x.com" }, people)?.id).toBe("7");
-    expect(linkContact(baroni, people)?.id).toBe("8");
-    expect(linkContact({ ...baroni, phone: "" }, people)).toBeUndefined();
-  });
+describe("contatos e roteiro", () => {
   it("variações de telefone para a busca", () => {
     expect(phoneVariants("+55 (31) 99327-2968")).toEqual(expect.arrayContaining(["+5531993272968", "31993272968"]));
     expect(phoneVariants("123")).toEqual([]);

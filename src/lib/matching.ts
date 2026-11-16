@@ -1,10 +1,10 @@
-// Vínculo negócio → expedição (SPEC §4.4) e correspondência cliente ↔ passageiro (SPEC §3).
+// Vínculo negócio → expedição (SPEC §4.4) e identificação dos passageiros (SPEC §3).
 // Qualquer mudança aqui exige teste em matching.test.ts.
 import { AIRPORTS } from "./airports";
 import { cityOf, kmBetween } from "./cities";
 import { dealCom, paymentKind, withCashback, ZERO, type Money, type Tone } from "./commission";
 import { dayNum, digits, dm, lower } from "./format";
-import type { Client, Deal, Expedition, Partner, Passenger } from "./types";
+import type { Deal, Expedition, Partner, Passenger } from "./types";
 
 // Tolerâncias padrão (configuráveis por parâmetro)
 export const TOL_BEFORE = 7;
@@ -14,7 +14,7 @@ export const RADIUS_KM = 700;
 export type Tolerances = { before: number; after: number; radiusKm: number };
 export const DEFAULT_TOL: Tolerances = { before: TOL_BEFORE, after: TOL_AFTER, radiusKm: RADIUS_KM };
 
-export const RULE_TIP = `O sistema vincula cada negócio pelo afiliado + data + destino: de ${TOL_BEFORE} dias antes a ${TOL_AFTER} dias depois da expedição, com a cidade da expedição em algum trecho ou uma cidade a até ${RADIUS_KM} km. Negócios do parceiro sem expedição aparecem aqui para vínculo manual.`;
+export const RULE_TIP = `O sistema vincula cada negócio pela agência (empresa associada no HubSpot) + data + destino: de ${TOL_BEFORE} dias antes a ${TOL_AFTER} dias depois da expedição, com a cidade da expedição em algum trecho ou uma cidade a até ${RADIUS_KM} km. Para mudar o vínculo, corrija o negócio no HubSpot.`;
 
 // Número exibido do negócio: o ID do HubSpot, ou o sequencial dos lançados à mão.
 export function dealNo(d: Pick<Deal, "hubspot_id" | "seq">): string {
@@ -95,15 +95,11 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedi
 
 // ---------------------------------------------------------------- Resolução
 
-export type FlagKey =
-  | "aprox" | "multi" | "nenhuma" | "fora" | "acompanhante" | "titular" | "nao_sinalizado"
-  | "credito" | "misto" | "ajustado" | "nome";
+export type FlagKey = "aprox" | "multi" | "nenhuma" | "nao_sinalizado" | "credito" | "misto" | "ajustado";
 export type Flag = { key: FlagKey; label: string; tone: Tone };
 
-// Sinalizações informativas não geram pendência de conferência.
-const INFORMATIVE: FlagKey[] = ["credito", "ajustado"];
-
-export type Registered = { passenger: Passenger; client: Client; byName?: boolean };
+// Só estes pedem correção no HubSpot (pendência da Vay). Os demais apenas informam.
+export const PENDING: FlagKey[] = ["nenhuma", "nao_sinalizado"];
 
 export type Resolved = {
   deal: Deal;
@@ -111,63 +107,37 @@ export type Resolved = {
   exp: Expedition | null;
   flags: Flag[];
   reason: string;
-  manual: boolean;
+  // Expedições compatíveis, da mais provável para a menos
   candIds: string[];
+  // Cashback: só negócio ganho vinculado a expedição remunera
   com: Money;
+  // Pendência: corrigir no HubSpot (some quando o HubSpot for corrigido)
   needsReview: boolean;
-  // Passageiros cadastrados na lista da expedição vinculada (titular primeiro)
-  registered: Registered[];
-  // Passageiros sem cadastro na lista (identidade só para a Vay; o parceiro não recebe esses dados)
-  unregistered: Passenger[];
-  // Quantos passageiros do negócio não estão na lista (vale para Vay e parceiro)
-  unregisteredCount: number;
-  // Cliente da linha principal: o titular, se cadastrado; senão o primeiro cadastrado
-  primaryClientId: string | null;
   // Negócio não sinalizado no HubSpot: expedição compatível por destino e data (não remunera)
   suggested: Expedition | null;
-  // Comissão que geraria se fosse sinalizado
+  // Comissão que geraria se fosse sinalizado (e ganho)
   potential: Money;
-  // Algum passageiro bate com a lista do parceiro (por contato, e-mail, telefone ou nome)
-  listEvidence: boolean;
   // O que corrigir no HubSpot
   fixes: string[];
-  // Conferido pela Vay e a conferência ainda cobre todos os avisos atuais
-  reviewedNow: boolean;
-  // Foi conferido, mas apareceu aviso novo depois
-  reviewStale: boolean;
 };
 
-// A conferência vale para os avisos que existiam quando foi feita (reviewed_flags).
-// Conferência antiga, sem data, vale para os avisos atuais.
-export function reviewCovers(d: Pick<Deal, "reviewed" | "reviewed_at" | "reviewed_flags">, pendingKeys: string[]): boolean {
-  if (!d.reviewed) return false;
-  if (!d.reviewed_at) return true;
-  const done = d.reviewed_flags ?? [];
-  return pendingKeys.every((k) => done.includes(k));
-}
-
-// Avisos que pedem conferência (os informativos não contam).
-export function pendingKeys(r: Pick<Resolved, "flags" | "deal">): FlagKey[] {
-  return r.deal.signaled === false ? ["nao_sinalizado"] : r.flags.filter((f) => !INFORMATIVE.includes(f.key)).map((f) => f.key);
-}
-
-// Sem acentos, minúsculo, espaços simples e sem as partículas de/da/do/das/dos/e (igual a fold_name, migração 0011)
-const foldName = (s: string) =>
-  ` ${s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()} `
+// Sem acentos, minúsculo, espaços simples e sem as partículas de/da/do/das/dos/e
+export const foldName = (s: string) =>
+  ` ${s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim()} `
     .replace(/ ((de|da|do|das|dos|e) )+/g, " ")
     .trim();
 
-// Indício mais fraco que samePerson: mesmo nome completo, sem diferenciar acentos, maiúsculas e espaços
-// (pelo menos nome e sobrenome; só o primeiro nome não basta). Espelha names_match() da migração 0010.
+// Mesmo nome completo, sem diferenciar acentos, maiúsculas, espaços e partículas (só o primeiro nome não basta).
 export function sameName(a: string, b: string): boolean {
   const x = foldName(a);
   return x.includes(" ") && x === foldName(b);
 }
 
 // O que falta no HubSpot para o negócio contar como de agência parceira.
-export function hubspotFixes(d: Pick<Deal, "hs_origem" | "hs_agency">, partnerName: string, origemValue = "Afiliado"): string[] {
+export function hubspotFixes(d: Pick<Deal, "hs_origem" | "hs_agency">, partnerName: string, origemValue = "Agência Parceira"): string[] {
   const out: string[] = [];
-  if (d.hs_origem !== origemValue) out.push(`marcar "Origem do Negócio" como "${origemValue}"${d.hs_origem ? ` (hoje: ${d.hs_origem})` : ""}`);
+  const isAgency = ["agencia parceira", "afiliado"].includes(foldName(d.hs_origem));
+  if (!isAgency) out.push(`marcar "Origem do Negócio" como "${origemValue}"${d.hs_origem ? ` (hoje: ${d.hs_origem})` : ""}`);
   if (!d.hs_agency) out.push(`associar a empresa "${partnerName}" ao negócio`);
   return out;
 }
@@ -179,42 +149,12 @@ export function sortPassengers(ps: Passenger[]): Passenger[] {
   );
 }
 
-// Liga os passageiros do negócio aos clientes da lista de uma expedição.
-// 1º contato do HubSpot, e-mail ou telefone (samePerson); 2º, para quem sobrou, o nome completo idêntico
-// (byName = true: vai para conferência como "Vinculado pelo nome"). Mesma regra de passenger_visible_to_partner (0010).
-export function linkPassengers(deal: Deal, expClients: Client[]) {
-  const registered: Registered[] = [];
-  const unregistered: Passenger[] = [];
-  const used = new Set<string>();
-  const pending: Passenger[] = [];
-  // Só quem viaja: comprador que não é passageiro (rótulo do HubSpot) não entra na lista nem conta como acompanhante.
-  for (const p of sortPassengers((deal.passengers ?? []).filter((x) => x.is_passenger !== false))) {
-    const c = expClients.find((x) => samePerson(x, p));
-    if (c) {
-      registered.push({ passenger: p, client: c });
-      used.add(c.id);
-    } else pending.push(p);
-  }
-  for (const p of pending) {
-    const c = expClients.find((x) => !used.has(x.id) && sameName(x.name, p.name));
-    if (c) {
-      registered.push({ passenger: p, client: c, byName: true });
-      used.add(c.id);
-    } else unregistered.push(p);
-  }
-  registered.sort((a, b) => Number(b.passenger.is_titular) - Number(a.passenger.is_titular) || a.passenger.position - b.passenger.position);
-  const total = Math.max(Number(deal.passenger_count) || 0, (deal.passengers ?? []).filter((x) => x.is_passenger !== false).length);
-  const titular = registered.find((r) => r.passenger.is_titular);
-  const first = [...registered].sort((a, b) => (a.client.created_at < b.client.created_at ? -1 : 1))[0];
-  return {
-    registered,
-    unregistered,
-    unregisteredCount: Math.max(0, total - registered.length),
-    primaryClientId: (titular ?? first)?.client.id ?? null,
-  };
+// Quem viaja: comprador que não é passageiro (rótulo do HubSpot) não entra na lista.
+export function travellers(d: Pick<Deal, "passengers">): Passenger[] {
+  return sortPassengers((d.passengers ?? []).filter((p) => p.is_passenger !== false));
 }
 
-// Cashback do negócio (SPEC 1.3): editado pela Vay > forma de pagamento > regras de comissão.
+// Cashback do negócio (SPEC 1.3): valor final definido > forma de pagamento > regras de comissão.
 export function cashback(d: Deal): { com: Money; flags: Flag[] } {
   const calc = dealCom(d);
   const kind = paymentKind(d.payment_methods);
@@ -224,24 +164,24 @@ export function cashback(d: Deal): { com: Money; flags: Flag[] } {
   if (kind === "credito")
     return { com: { ...ZERO, sold: calc.sold }, flags: [{ key: "credito", label: "Pago com créditos · sem cashback", tone: "neutral" }] };
   if (kind === "misto")
-    return { com: { ...ZERO, sold: calc.sold }, flags: [{ key: "misto", label: "Pagamento misto · definir cashback", tone: "yellow" }] };
+    return { com: { ...ZERO, sold: calc.sold }, flags: [{ key: "misto", label: "Pagamento misto · cashback a definir", tone: "yellow" }] };
   return { com: calc, flags: [] };
 }
 
-// Cashback calculado pelas regras, sem a edição da Vay (para o histórico e o modal de edição).
+// Cashback calculado pelas regras, sem valor definido manualmente.
 export function calculatedCashback(d: Deal): number {
   return cashback({ ...d, cashback_override: null }).com.total;
 }
 
-export function resolveDeals(
-  deals: Deal[],
-  partners: Partner[],
-  exps: Expedition[],
-  clients: Client[],
-  tol: Tolerances = DEFAULT_TOL,
-): Resolved[] {
+// Vínculo de cada negócio (SPEC 2.0): sempre automático, pelo parceiro + destino + data.
+// Mais de uma expedição possível → a de maior pontuação (destino e datas mais próximos), com aviso só informativo.
+export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expedition[], tol: Tolerances = DEFAULT_TOL): Resolved[] {
   const byAfiliado = new Map(partners.map((p) => [p.afiliado, p]));
-  const expById = new Map(exps.map((e) => [e.id, e]));
+  const ranked = (pool: Expedition[], d: Deal) =>
+    pool
+      .map((e) => ({ e, m: evalDeal(d, e, tol) }))
+      .filter((x): x is { e: Expedition; m: Match } => !!x.m)
+      .sort((a, b) => b.m.score - a.m.score);
 
   return deals.map((d) => {
     const p = byAfiliado.get(d.afiliado) ?? null;
@@ -251,107 +191,51 @@ export function resolveDeals(
       exp: null,
       flags: [],
       reason: "",
-      manual: false,
       candIds: [],
       com: ZERO,
       needsReview: false,
-      registered: [],
-      unregistered: [],
-      unregisteredCount: 0,
-      primaryClientId: null,
       suggested: null,
       potential: ZERO,
-      listEvidence: false,
       fixes: [],
-      reviewedNow: false,
-      reviewStale: false,
     };
 
     // Não sinalizado no HubSpot: procura a expedição por destino e data; nunca remunera.
     if (d.signaled === false) {
       const hinted = d.hs_agency ? byAfiliado.get(d.hs_agency) ?? null : null;
-      const pool = hinted ? exps.filter((e) => e.partner_id === hinted.id) : exps;
-      const best = pool
-        .map((e) => ({ e, m: evalDeal(d, e, tol) }))
-        .filter((x): x is { e: Expedition; m: Match } => !!x.m)
-        .sort((a, b) => b.m.score - a.m.score)[0];
+      const best = ranked(hinted ? exps.filter((e) => e.partner_id === hinted.id) : exps, d)[0];
       if (best) {
-        const owner = partners.find((p) => p.id === best.e.partner_id) ?? null;
-        const expClients = clients.filter((c) => c.expedition_id === best.e.id);
+        const owner = partners.find((x) => x.id === best.e.partner_id) ?? null;
         r.partner = owner;
         r.suggested = best.e;
         r.reason = best.m.reason;
-        r.potential = cashback(d).com;
-        r.listEvidence = (d.passengers ?? []).some((p) =>
-          expClients.some((c) => samePerson(c, p) || sameName(c.name, p.name)),
-        );
+        r.potential = d.stage_kind === "won" ? cashback(d).com : ZERO;
         r.fixes = hubspotFixes(d, owner?.afiliado ?? "da agência");
         r.flags.push({ key: "nao_sinalizado", label: "Encontrado, mas não sinalizado no HubSpot", tone: "red" });
-        const covered = reviewCovers(d, ["nao_sinalizado"]);
-        r.needsReview = !covered;
-        r.reviewedNow = covered;
-        r.reviewStale = d.reviewed && !covered;
+        r.needsReview = true;
       }
       return r;
     }
 
-    if (d.override_none || d.override_expedition_id) {
-      r.manual = true;
-      const ov = d.override_expedition_id ? expById.get(d.override_expedition_id) : undefined;
-      if (!d.override_none && ov) {
-        r.exp = ov;
-        r.reason = "Atribuído manualmente pela Vay Agora.";
-      } else {
-        r.reason = "Marcado manualmente como fora de expedição — não remunera.";
+    const cands = p ? ranked(exps.filter((e) => e.partner_id === p.id), d) : [];
+    if (cands.length) {
+      r.exp = cands[0].e;
+      r.reason = cands[0].m.reason;
+      r.candIds = cands.map((x) => x.e.id);
+      if (cands[0].m.approx) r.flags.push({ key: "aprox", label: "Vínculo por aproximação", tone: "bluebell" });
+      if (cands.length > 1)
+        r.flags.push({ key: "multi", label: "Mais de uma expedição possível · ficou na mais próxima", tone: "neutral" });
+      if (d.stage_kind === "won") {
+        const c = cashback(d);
+        r.com = c.com;
+        r.flags.push(...c.flags);
       }
-    } else {
-      const cands = p
-        ? exps
-            .filter((e) => e.partner_id === p.id)
-            .map((e) => ({ e, m: evalDeal(d, e, tol) }))
-            .filter((x): x is { e: Expedition; m: Match } => !!x.m)
-            .sort((a, b) => b.m.score - a.m.score)
-        : [];
-      if (cands.length) {
-        r.exp = cands[0].e;
-        r.reason = cands[0].m.reason;
-        r.candIds = cands.map((x) => x.e.id);
-        if (cands[0].m.approx)
-          r.flags.push({ key: "aprox", label: "Vínculo por aproximação", tone: "bluebell" });
-        if (cands.length > 1)
-          r.flags.push({ key: "multi", label: "Mais de uma expedição possível", tone: "yellow" });
-      } else {
-        r.reason = p
-          ? `Nenhuma expedição de ${p.name} combina com as datas e o destino desta viagem.`
-          : "Afiliado não corresponde a nenhum parceiro cadastrado.";
-        r.flags.push({ key: "nenhuma", label: "Nenhuma expedição encontrada", tone: "red" });
-      }
+    } else if (d.stage_kind !== "lost") {
+      r.reason = p
+        ? `Nenhuma expedição de ${p.name} combina com as datas e o destino desta viagem.`
+        : "A empresa associada não corresponde a nenhum parceiro cadastrado.";
+      r.flags.push({ key: "nenhuma", label: "Nenhuma expedição encontrada", tone: "red" });
     }
-
-    if (r.exp) {
-      const expId = r.exp.id;
-      Object.assign(r, linkPassengers(d, clients.filter((c) => c.expedition_id === expId)));
-      // Basta um passageiro estar na lista para o negócio contar como "na lista".
-      if (r.registered.length === 0)
-        r.flags.push({ key: "fora", label: "Cliente fora da lista do parceiro", tone: "yellow" });
-      else if (r.unregisteredCount > 0)
-        // SPEC 1.3: acompanhante que não está na expedição deveria estar em outro negócio.
-        r.flags.push({ key: "acompanhante", label: "Acompanhante fora da expedição", tone: "yellow" });
-      // Ligado ao cliente só pelo nome (contato, e-mail e telefone não bateram): conferir.
-      if (r.registered.some((x) => x.byName))
-        r.flags.push({ key: "nome", label: "Vinculado pelo nome", tone: "yellow" });
-      const c = cashback(d);
-      r.com = c.com;
-      r.flags.push(...c.flags);
-    }
-    if (d.titular_labeled === false)
-      r.flags.push({ key: "titular", label: "Titular não definido", tone: "yellow" });
-
-    const keys = pendingKeys(r);
-    const covered = reviewCovers(d, keys);
-    r.needsReview = keys.length > 0 && !covered;
-    r.reviewedNow = d.reviewed && covered;
-    r.reviewStale = d.reviewed && !covered && keys.length > 0;
+    r.needsReview = r.flags.some((f) => PENDING.includes(f.key));
     return r;
   });
 }

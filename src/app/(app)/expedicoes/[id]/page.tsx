@@ -1,16 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { expEnd, expStatus, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
-import type { ManualStage, StageId } from "@/lib/types";
-import type { ClientLine } from "@/lib/ledger";
-import { calculatedCashback, dealNo, pendingKeys, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
+import { dealStage, expEnd, expStatus, isDone, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
+import { dealNo, PENDING, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
-import { createClient } from "@/lib/supabase/server";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
-import { ClientTools, NewDealForm } from "./forms";
+import { FinishExpedition } from "./forms";
 import { ClientsTable, type TableRow } from "./ClientsTable";
 import { DealGroups } from "./DealGroups";
 import type { DealView } from "./DealRow";
@@ -18,15 +15,9 @@ import type { ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
 
-export default async function ExpeditionPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ novo?: string; cliente?: string }>;
-}) {
+export default async function ExpeditionPage({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireSession();
-  const [{ id }, sp, world] = await Promise.all([params, searchParams, loadWorld()]);
+  const [{ id }, world] = await Promise.all([params, loadWorld()]);
   const exp = world.exps.find((e) => e.id === id);
   if (!exp) notFound();
 
@@ -35,168 +26,80 @@ export default async function ExpeditionPage({
   const partner = world.partners.find((p) => p.id === exp.partner_id);
   const t = ledger.expStats(exp);
   const st = expStatus(exp);
-  const outside = ledger.dealsForExp(exp.id).filter((r) => r.flags.some((f) => f.key === "fora"));
-  const outsideCom = outside.reduce((a, r) => a + r.com.total, 0);
-  const lines: ClientLine[] = t.clients.map((c) => ledger.clientLine(c));
-  const notesOf = (dealId: string) => world.notes.filter((n) => n.deal_id === dealId);
-  let vayUsers: { id: string; name: string }[] = [];
-  if (isVay) {
-    const { data } = await (await createClient()).from("profiles").select("id, full_name, email").eq("role", "vay").order("full_name");
-    vayUsers = (data ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email }));
-  }
-  const pd = (r: Resolved): ProductDeal => ({
-    id: r.deal.id,
-    no: dealNo(r.deal),
-    value: null,
-    details: r.deal.details ?? {},
-    notes: notesOf(r.deal.id),
-  });
-  // Produtos de uma linha: valor só nos negócios da linha principal; nas outras, "Incluído no #…".
-  const prods = (primary: Resolved[], included: Resolved[], hasDeal: boolean): TableRow["prods"] =>
-    PRODUCTS.map((k: Product) => ({
-      product: k,
-      primary: primary.filter((r) => Number(r.deal[k]) > 0).map((r) => ({ ...pd(r), value: Number(r.deal[k]) })),
-      included: included.filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r)),
-      hasDeal,
-    }));
-  const stageCell = (id: StageId, manual: ManualStage, editable: boolean): TableRow["stage"] => {
-    const sg = stageOf(id);
-    return { id, label: sg.label, tone: sg.tone, editable: editable && (STAGES.find((x) => x.id === id)?.manual || id === "novo"), manual };
-  };
-  const fechado = stageOf("fechado");
-  const noOwner = { id: null, name: "", editable: false };
-  const commentsOf = (clientId: string) => world.comments.filter((c) => c.client_id === clientId);
-  const tableRows: TableRow[] = [];
-  for (const l of lines) {
-    const c = l.client;
-    tableRows.push({
-      key: c.id,
-      clientId: c.id,
-      warn: false,
-      people: [{ name: c.name, contact: c.email }],
-      hiddenTxt:
-        !isVay && l.hiddenPassengers
-          ? `+${l.hiddenPassengers} ${l.hiddenPassengers === 1 ? "passageiro não cadastrado" : "passageiros não cadastrados"}`
-          : undefined,
-      stage: { ...stageCell(l.stage, c.stage, isVay), sub: l.boughtBy.length ? `comprado por ${l.boughtBy.join(", ")}` : undefined },
-      owner: { id: c.owner_id, name: c.owner_name, editable: isVay },
-      dealNos: l.deals.map((r) => dealNo(r.deal)),
-      prods: prods(l.primary, l.included, l.deals.length > 0),
-      com: l.primary.length ? l.com.total : l.included.length ? null : 0,
-      hsNote: c.hs_note,
-      comments: commentsOf(c.id),
-      email: c.email,
-      phone: c.phone,
-    });
-    if (isVay)
-      for (const { passenger: p, deal: r } of l.unregistered)
-        tableRows.push({
-          key: `${c.id}-${p.id}`,
-          clientId: null,
-          warn: false,
-          people: [{ name: p.name, contact: p.email }],
-          tag: { label: "Não cadastrado pelo parceiro", tone: "neutral" },
-          stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
-          owner: noOwner,
-          link: { passengers: [{ id: p.id, name: p.name }] },
-          dealNos: [dealNo(r.deal)],
-          prods: prods([], [r], true),
-          com: null,
-          hsNote: "",
-          comments: [],
-          email: p.email,
-          phone: p.phone,
-        });
-  }
-  if (isVay)
-    for (const r of outside) {
-      const ps = sortPassengers(r.deal.passengers.filter((p) => p.is_passenger !== false));
-      tableRows.push({
-        key: r.deal.id,
-        clientId: null,
-        warn: true,
-        people: ps.map((p) => ({ name: p.name, suffix: p.is_titular && ps.length > 1 ? " · titular" : undefined, contact: p.email })),
-        tag: { label: "Fora da lista do parceiro", tone: "yellow" },
-        link: { passengers: ps.map((p) => ({ id: p.id, name: p.name })) },
-        stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
-        owner: noOwner,
-        dealNos: [dealNo(r.deal)],
-        prods: prods([r], [], true),
-        com: r.com.total,
-        hsNote: "",
-        comments: [],
-        email: ps.map((p) => p.email).filter(Boolean).join(", "),
-        phone: ps.map((p) => p.phone).filter(Boolean).join(", "),
-      });
-    }
-
-  const expDeals = ledger.resolved
-    .filter((r) => r.deal.signaled !== false)
-    .filter((r) => (r.exp && r.exp.id === exp.id) || (!r.exp && r.partner?.id === exp.partner_id))
-    .sort(
-      (a, b) =>
-        Number(b.needsReview) - Number(a.needsReview) || (a.deal.closed_on < b.deal.closed_on ? 1 : -1),
-    );
-  const pending = ledger.pendingFor(exp);
-  const unsignaled = isVay ? ledger.unsignaledFor(exp) : [];
   const portal = process.env.HUBSPOT_PORTAL_ID ?? "44656712";
-  const partnerExps = world.exps.filter((e) => e.partner_id === exp.partner_id);
-  const assignOptions = [
-    { value: "auto", label: "Atribuição automática" },
-    ...partnerExps.map((e) => ({ value: e.id, label: `${e.name} · ${cityLabel(e.city)} · ${fmtDate(e.start_date)}` })),
-    { value: "none", label: "Sem expedição (não remunera)" },
-  ];
+  const hsUrl = (hid: string | null) => (isVay && hid ? `https://app.hubspot.com/contacts/${portal}/record/0-3/${hid}` : null);
+  const closing = world.entries.find((e) => e.expedition_id === exp.id);
+  const released = exp.finished_at ? Number(closing?.amount ?? 0) : null;
+
+  const pd = (r: Resolved, value: number | null): ProductDeal => ({ id: r.deal.id, no: dealNo(r.deal), value, details: r.deal.details ?? {} });
+  const won = (rs: Resolved[]) => rs.filter((r) => r.deal.stage_kind === "won");
+  const tableRows: TableRow[] = ledger.lines(exp).map((l) => {
+    const sg = stageOf(l.stage);
+    const primaryWon = won(l.primary);
+    return {
+      key: l.key,
+      name: l.name,
+      email: l.email,
+      phone: l.phone,
+      stage: { id: l.stage, label: sg.label, tone: sg.tone, sub: l.boughtBy.length ? `comprado por ${l.boughtBy.join(", ")}` : undefined },
+      deals: l.deals.map((r) => ({ no: dealNo(r.deal), url: hsUrl(r.deal.hubspot_id), stage: stageOf(dealStage(r.deal)).label })),
+      prods: PRODUCTS.map((k: Product) => ({
+        product: k,
+        primary: primaryWon.filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r, Number(r.deal[k]))),
+        included: won(l.included).filter((r) => Number(r.deal[k]) > 0).map((r) => pd(r, null)),
+      })),
+      com: primaryWon.length ? l.com.total : null,
+      hsNote: l.note,
+    };
+  });
+
+  const expDeals = isVay
+    ? ledger.resolved.filter(
+        (r) => r.deal.signaled !== false && ((r.exp && r.exp.id === exp.id) || (!r.exp && r.needsReview && r.partner?.id === exp.partner_id)),
+      )
+    : [];
+  const pending = isVay ? ledger.pendingFor(exp) : 0;
+  const unsignaled = isVay ? ledger.unsignaledFor(exp) : [];
 
   const productsOf = (d: Resolved["deal"]) =>
     PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`).join(" · ") || "—";
-  // Dados do card compacto + modal de cada negócio (DealRow)
   const view = (r: Resolved): DealView => {
     const d = r.deal;
     const unsig = d.signaled === false;
-    const keys = pendingKeys(r);
     const legs = d.legs;
+    const sg = stageOf(dealStage(d));
     const others = r.candIds.slice(1).map((cid) => world.exps.find((e) => e.id === cid)?.name).filter(Boolean);
     return {
       id: d.id,
       no: dealNo(d),
       name: d.name,
-      hubspotUrl: d.hubspot_id ? `https://app.hubspot.com/contacts/${portal}/record/0-3/${d.hubspot_id}` : null,
-      flags: unsig
-        ? [{ key: "nao_sinalizado", label: "Não sinalizado no HubSpot", tone: "red", pending: true }]
-        : r.flags.map((f) => ({ key: f.key, label: f.label, tone: f.tone, pending: keys.includes(f.key) })),
-      flagKeys: keys,
+      hubspotUrl: hsUrl(d.hubspot_id),
+      stage: { label: sg.label, tone: sg.tone },
+      flags: r.flags.map((f) => ({ key: f.key, label: f.label, tone: f.tone, pending: PENDING.includes(f.key) })),
       needsReview: r.needsReview,
-      reviewed: r.reviewedNow ? { by: d.reviewed_by_name ?? "", at: d.reviewed_at ?? null } : null,
-      reviewStale: r.reviewStale,
-      manual: r.manual,
       passengers: sortPassengers(d.passengers).map((p) => ({
         id: p.id,
         name: p.name,
         strong: p.is_titular,
-        note: [
-          p.is_buyer && !p.is_passenger ? "comprador, não viaja" : p.is_buyer ? "comprador" : p.is_titular ? "titular" : "",
-          r.exp && r.unregistered.some((u) => u.id === p.id) ? "não cadastrado" : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
+        note: p.is_buyer && !p.is_passenger ? "comprador, não viaja" : p.is_buyer ? "comprador" : p.is_titular ? "titular" : "",
       })),
       routeShort: legs.length ? `${legs[0].city} → ${legs[legs.length - 1].city} · ${dm(legs[0].date)}–${dm(d.end_date)}` : "",
       route: `${legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta ${fmtDate(d.end_date)}`,
-      closedOn: fmtDate(d.closed_on),
+      closedOn: d.closed_on ? fmtDate(d.closed_on) : "",
       products: productsOf(d),
       payment: d.payment_methods.length ? d.payment_methods.join(" + ") : "não informado no HubSpot",
       reason: r.reason + (others.length ? ` Outras expedições compatíveis: ${others.join(", ")}.` : ""),
       com: unsig ? r.potential.total : r.com.total,
-      comLabel: unsig ? "Comissão se for sinalizado" : r.exp ? (r.flags.some((f) => f.key === "misto") ? "Cashback a definir" : "Cashback do parceiro") : "Sem expedição · não remunera",
-      assign: unsig
-        ? undefined
-        : { value: d.override_none ? "none" : d.override_expedition_id ?? "auto", options: assignOptions, canLinkHere: !r.exp, hereExpId: exp.id },
-      cashback:
-        !unsig && r.exp
-          ? { current: r.com.total, calculated: calculatedCashback(d), override: d.cashback_override, history: world.cashbackHistory.filter((h) => h.deal_id === d.id) }
-          : undefined,
+      comLabel: unsig
+        ? "Comissão se for sinalizado"
+        : d.stage_kind !== "won"
+          ? "Ainda não comprou"
+          : r.exp
+            ? r.flags.some((f) => f.key === "misto")
+              ? "Cashback a definir"
+              : "Cashback do parceiro"
+            : "Sem expedição · não remunera",
       fixes: unsig ? r.fixes : undefined,
-      evidence: unsig ? (r.listEvidence ? { label: "Passageiro na lista do parceiro", tone: "yellow" } : { label: "Só destino e data", tone: "neutral" }) : undefined,
     };
   };
 
@@ -210,7 +113,7 @@ export default async function ExpeditionPage({
             <Link href="/expedicoes" className="back">← Expedições</Link>
           )}
           <div className="row" style={{ gap: 8 }}>
-            <Badge tone={st.tone} dot>{st.label}</Badge>
+            {exp.finished_at ? <Badge tone="success" dot>Finalizada</Badge> : <Badge tone={st.tone} dot>{st.label}</Badge>}
             {isVay && partner ? <Link href={`/parceiros/${partner.id}`}><Badge tone="neutral">{partner.name}</Badge></Link> : null}
           </div>
           <h1 className="page-title">{exp.name}</h1>
@@ -222,62 +125,58 @@ export default async function ExpeditionPage({
             {exp.departure_airport ? <span>Saída: <strong>{airportLabel(exp.departure_airport)}</strong></span> : null}
           </div>
         </div>
+        {isVay && !exp.finished_at && isDone(exp) ? (
+          <FinishExpedition expId={exp.id} expName={exp.name} total={brl(t.total)} deals={t.deals} />
+        ) : null}
       </div>
 
       <div className="grid-kpi">
         <Kpi
-          label="Clientes cadastrados"
+          label="Clientes"
           value={String(t.n)}
           sub={<span className="highlight">{plural(t.closed, "compra concluída", "compras concluídas")}</span>}
         />
-        <Kpi accent label={isVay ? "Comissão do parceiro" : "Seus ganhos nesta expedição"} value={brl(t.total)} sub={`Voos ${brl(t.voo)} · Hosp. ${brl(t.hotel)} · Seg. ${brl(t.seguro)}`} />
-        <Kpi label="Em negociação" value={String(t.stages.negociacao ?? 0)} sub={`${t.stages.novo ?? 0} não contactados`} />
+        <Kpi
+          accent
+          label={isVay ? "Comissão do parceiro" : "Seus ganhos nesta expedição"}
+          value={brl(released ?? t.total)}
+          sub={
+            exp.finished_at
+              ? `Liberado em ${fmtDate(exp.finished_at.slice(0, 10))}${isVay && exp.finished_by_name ? ` por ${exp.finished_by_name}` : ""}`
+              : "A liberar · entra no saldo quando a Vay Agora finalizar a expedição"
+          }
+        />
+        <Kpi label="Em negociação" value={String(t.stages.negociacao ?? 0)} sub={`${t.stages.em_contato ?? 0} em contato · ${t.stages.perdido ?? 0} não compraram`} />
       </div>
-
-      {!isVay ? <ClientTools expId={exp.id} startOpen={!!sp.novo} /> : null}
 
       <section className="card">
         <div className="card-head">
           <div className="ttl">
             <h2 className="section-title">Clientes da expedição</h2>
             <Tip>
-              {isVay
-                ? "Clientes cadastrados pelo parceiro + negócios do HubSpot vinculados a esta expedição. Etapa e responsável se editam na própria linha; clique na observação para ver e adicionar comentários."
-                : "Clientes que você cadastrou. Compras confirmadas pela Vay Agora aparecem aqui automaticamente. Clique na observação para ver os comentários."}
+              Passageiros dos negócios da agência no HubSpot com destino e datas desta expedição. A etapa vem da etapa do
+              negócio e a observação, do campo “Observações para parceiro”. Para corrigir qualquer dado, altere no HubSpot.
             </Tip>
           </div>
         </div>
         <ClientsTable
           rows={tableRows}
-          isVay={isVay}
           earnHeader={isVay ? "Comissão" : "Seu ganho"}
           stageOptions={STAGES.map((x) => ({ value: x.id, label: x.label }))}
-          manualStageOptions={[{ value: "auto", label: "Não contactado" }, ...STAGES.filter((x) => x.manual).map((x) => ({ value: x.id, label: x.label }))]}
-          vayUsers={vayUsers.map((u) => ({ value: u.id, label: u.name }))}
           expName={exp.name}
-          emptyText={isVay ? "O parceiro ainda não cadastrou clientes nesta expedição." : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}
-          initialClient={sp.cliente}
-          linkClients={t.clients.map((c) => ({ value: c.id, label: c.name })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))}
+          emptyText="Nenhum negócio da agência no HubSpot para esta expedição ainda."
         />
-        {!isVay && outside.length ? (
-          <p className="small muted" style={{ padding: "12px 18px", borderTop: "1px solid var(--border-subtle)" }}>
-            Inclui {outside.length} {outside.length === 1 ? "venda atribuída" : "vendas atribuídas"} pela Vay Agora a esta expedição para clientes que não estão na sua lista · seu ganho: {brl(outsideCom)}.
-          </p>
-        ) : null}
       </section>
 
       {isVay ? (
         <section className="card pad stack" id="negocios">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div className="ttl">
-              <h2 className="section-title">Negócios do HubSpot</h2>
-              <Tip>{RULE_TIP}</Tip>
-              {pending ? <Badge tone="yellow">{pending} para conferir</Badge> : null}
-            </div>
-            {partner ? <NewDealForm afiliado={partner.afiliado} defaultCity={exp.city} defaultDate={exp.start_date} /> : null}
+          <div className="ttl">
+            <h2 className="section-title">Negócios do HubSpot</h2>
+            <Tip>{RULE_TIP}</Tip>
+            {pending ? <Badge tone="red">{pending} para corrigir no HubSpot</Badge> : null}
           </div>
           {expDeals.length === 0 ? <p className="muted">Nenhum negócio do HubSpot vinculado a esta expedição ainda.</p> : null}
-          <DealGroups views={expDeals.map((r) => view(r))} pendingTitle="Para conferir" restTitle="Demais negócios" />
+          <DealGroups views={expDeals.map((r) => view(r))} pendingTitle="Corrigir no HubSpot" restTitle="Negócios vinculados" />
         </section>
       ) : null}
 
@@ -286,13 +185,13 @@ export default async function ExpeditionPage({
           <div className="ttl">
             <h2 className="section-title">Encontrados, mas não sinalizados no HubSpot</h2>
             <Tip>
-              Negócios fechados com destino e datas compatíveis com esta expedição, mas sem a marcação de agência
-              parceira no HubSpot. Não geram comissão até serem corrigidos lá; na próxima sincronização eles passam
-              para a lista acima. Só a equipe Vay Agora vê esta seção.
+              Negócios ganhos ou em aberto com destino e datas compatíveis com esta expedição, mas sem a marcação de agência
+              parceira no HubSpot (Origem do Negócio + empresa associada). Não aparecem para o parceiro e não geram comissão.
+              Corrigidos no HubSpot, passam para a lista acima na próxima sincronização. Só a equipe Vay Agora vê esta seção.
             </Tip>
             <Badge tone="red">{unsignaled.length}</Badge>
           </div>
-          <DealGroups views={unsignaled.map((r) => view(r))} pendingTitle="Para conferir" restTitle="Conferidos" />
+          <DealGroups views={unsignaled.map((r) => view(r))} pendingTitle="Corrigir no HubSpot" restTitle="Outros" />
         </section>
       ) : null}
     </>

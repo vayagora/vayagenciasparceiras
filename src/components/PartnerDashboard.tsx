@@ -31,7 +31,7 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
             <Tip>
               {isVay
                 ? "Exatamente os ganhos que este parceiro vê no painel dele, mais as expedições."
-                : "Seus ganhos por período e as suas expedições. Inicie uma expedição para cada viagem ou grupo confirmado e cadastre os clientes nela."}
+                : "Seus ganhos por período e as suas expedições. Os clientes de cada expedição vêm das vendas registradas pela Vay Agora."}
             </Tip>
           </div>
         </div>
@@ -50,15 +50,15 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
             <h2 className="section-title">Expedições</h2>
             <Badge tone="neutral">{exps.length}</Badge>
           </div>
-          <Link href={`${basePath}?nova=1#nova-expedicao`} className="btn primary sm">Iniciar expedição</Link>
+          {isVay ? <Link href={`${basePath}?nova=1#nova-expedicao`} className="btn primary sm">Nova expedição</Link> : null}
         </div>
-        {newExpedition ? <NewExpeditionForm fixedPartnerId={isVay ? partner.id : undefined} cancelHref={basePath} /> : null}
+        {isVay && newExpedition ? <NewExpeditionForm fixedPartnerId={partner.id} cancelHref={basePath} /> : null}
         <ExpeditionList
           exps={exps}
           world={world}
           isVay={isVay}
           showPartner={false}
-          emptyText={isVay ? "Este parceiro ainda não tem expedições." : "Nenhuma expedição por aqui ainda. Use “Iniciar expedição”."}
+          emptyText={isVay ? "Este parceiro ainda não tem expedições." : "Nenhuma expedição por aqui ainda. Fale com a Vay Agora para iniciar uma."}
         />
       </section>
     </>

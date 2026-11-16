@@ -14,11 +14,13 @@ export type HubspotConfig = {
   titularLabels: string[]; // rótulos que marcam o titular (padrão: "Titular" ou "Comprador")
   buyerLabel: string;
   passengerLabel: string;
-  // Negócio de agência parceira = este campo com este valor + empresa (agência) associada ao negócio
+  // Negócio de agência parceira = este campo com um destes valores + empresa (agência) associada ao negócio.
+  // O primeiro valor é o que o sistema pede para marcar ao corrigir um negócio.
   origemProp: string;
-  origemValue: string;
-  // Etapas "antes da compra" (em negociação)
+  origemValues: string[];
+  // Etapas "antes da compra" (em negociação) e de negócio perdido
   openStages: string[];
+  lostStages: string[];
   // Campo do negócio com as observações para o parceiro
   obsProp: string;
 };
@@ -34,9 +36,10 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
     buyerLabel: env.HUBSPOT_BUYER_LABEL ?? "Comprador",
     passengerLabel: env.HUBSPOT_PASSENGER_LABEL ?? "Passageiro",
     origemProp: env.HUBSPOT_ORIGEM_PROP ?? "origem_do_negocio",
-    origemValue: env.HUBSPOT_ORIGEM_VALUE ?? "Afiliado",
+    origemValues: (env.HUBSPOT_ORIGEM_VALUE ?? "Agência Parceira,Afiliado").split(",").map((s) => s.trim()).filter(Boolean),
     openStages: (env.HUBSPOT_OPEN_STAGES ?? "appointmentscheduled,qualifiedtobuy,presentationscheduled,135850329,contractsent,135525685")
       .split(",").map((s) => s.trim()).filter(Boolean),
+    lostStages: (env.HUBSPOT_LOST_STAGES ?? "closedlost").split(",").map((s) => s.trim()).filter(Boolean),
     obsProp: env.HUBSPOT_PROP_OBS_PARCEIRO ?? "observacoes_para_parceiro",
   };
 }
@@ -366,17 +369,33 @@ async function searchDeals(cfg: HubspotConfig, filterGroups: { filters: Filter[]
   return out;
 }
 
-// Negócios ganhos com origem "Afiliado" (sinalizados como de agência). Lê todos a cada sincronização
-// para pegar também mudanças nas associações (que não alteram a data de modificação do negócio).
-export function searchWonDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
+// Negócios da agência parceira (origem "Agência Parceira"/"Afiliado") em qualquer etapa do funil.
+// Lê todos a cada sincronização para pegar também mudanças nas associações
+// (que não alteram a data de modificação do negócio).
+export function searchAgencyDeals(cfg: HubspotConfig): Promise<HsDeal[]> {
   return searchDeals(cfg, [
     {
       filters: [
-        { propertyName: "dealstage", operator: "IN", values: cfg.wonStages },
-        { propertyName: cfg.origemProp, operator: "EQ", value: cfg.origemValue },
+        { propertyName: "dealstage", operator: "IN", values: [...cfg.wonStages, ...cfg.openStages, ...cfg.lostStages] },
+        { propertyName: cfg.origemProp, operator: "IN", values: cfg.origemValues },
       ],
     },
   ]);
+}
+
+// Etapa do negócio no HubSpot → ganho, em aberto ou perdido (null = fora do funil de vendas)
+export function stageKind(cfg: Pick<HubspotConfig, "wonStages" | "openStages" | "lostStages">, stage: string | null | undefined): "won" | "open" | "lost" | null {
+  const s = String(stage ?? "");
+  if (cfg.wonStages.includes(s)) return "won";
+  if (cfg.openStages.includes(s)) return "open";
+  if (cfg.lostStages.includes(s)) return "lost";
+  return null;
+}
+
+// Origem marcada como negócio de agência parceira (ignora acentos e maiúsculas)
+export function isAgencyOrigem(cfg: Pick<HubspotConfig, "origemValues">, v: string | null | undefined): boolean {
+  const x = fold(String(v ?? ""));
+  return !!x && cfg.origemValues.some((o) => fold(o) === x);
 }
 
 // Todos os negócios ganhos com viagem entre from e to (1º trecho aéreo, check-in ou início do seguro),
@@ -395,9 +414,9 @@ function searchWindow(cfg: HubspotConfig, stages: string[], from: string, to: st
   );
 }
 
-// Negócios ainda em negociação (etapas antes da compra) com viagem entre from e to.
-export function searchOpenDealsInWindow(cfg: HubspotConfig, from: string, to: string): Promise<HsDeal[]> {
-  return searchWindow(cfg, cfg.openStages, from, to);
+// Negócios ganhos ou em aberto com viagem entre from e to (para achar os não sinalizados).
+export function searchActiveDealsInWindow(cfg: HubspotConfig, from: string, to: string): Promise<HsDeal[]> {
+  return searchWindow(cfg, [...cfg.wonStages, ...cfg.openStages], from, to);
 }
 
 // Variações de telefone como costumam estar gravadas no HubSpot (+5531999999999, 5531..., 31...).

@@ -100,9 +100,9 @@ export default async function AcordoPage() {
           <h2 className="section-title">O que cabe à sua agência</h2>
           <ul className="agr-list">
             <li>Vender e entregar a experiência principal (expedição, evento, intercâmbio ou viagem em grupo).</li>
-            <li>Avisar a Vay Agora sempre que uma viagem ou grupo for confirmado (aqui, iniciando a expedição).</li>
+            <li>Avisar a Vay Agora sempre que uma viagem ou grupo for confirmado.</li>
             <li>Repassar aos clientes a estimativa do aéreo enviada pela Vay Agora, deixando claro que o valor final depende da cotação na compra.</li>
-            <li>Enviar os contatos dos clientes com viagem confirmada (aqui, cadastrando-os na expedição).</li>
+            <li>Enviar à Vay Agora os contatos dos clientes com viagem confirmada.</li>
           </ul>
         </section>
         <section className="card pad stack" style={{ gap: 8 }}>

@@ -29,43 +29,24 @@ export type Expedition = {
   // Aeroportos preferenciais (código IATA). O de chegada dá as coordenadas do destino para o vínculo.
   arrival_airport: string | null;
   departure_airport: string | null;
+  // Fechamento: a Vay confirmou que a expedição aconteceu; os créditos foram lançados no extrato
+  finished_at?: string | null;
+  finished_by_name?: string;
   created_at: string;
 };
 
-// Etapa exibida: negócios do HubSpot (negociacao, fechado) ou status do contato marcado pela Vay no sistema.
-export type StageId = "novo" | "tentando" | "em_contato" | "chamar_depois" | "negociacao" | "fechado" | "nao_contactar" | "outro_lugar";
-// O que fica gravado em clients.stage: o status do contato marcado pela Vay ("auto" = não contactado).
-export type ManualStage = "auto" | "tentando" | "em_contato" | "chamar_depois" | "nao_contactar" | "outro_lugar";
-
-export type Client = {
-  id: string;
-  expedition_id: string;
-  name: string;
-  email: string;
-  phone: string;
-  stage: ManualStage;
-  hubspot_status: "novo" | "existente" | null;
-  hubspot_contact_id: string | null;
-  // Calculado pela sincronização: negócio compatível com a expedição em aberto ou ganho
-  hs_status: "negociacao" | "fechado" | null;
-  hs_deal_id: string | null;
-  // Observação para o parceiro escrita pela Vay no sistema (só enquanto não há negócio no HubSpot)
-  partner_note: string;
-  // "Observações para parceiro" do(s) negócio(s) no HubSpot
-  hs_note: string;
-  // Responsável da Vay pelo contato
-  owner_id: string | null;
-  owner_name: string;
-  last_follow_up: string | null;
-  note: string;
-  created_at: string;
-};
+// Etapa do cliente (SPEC 2.0): vem da etapa do negócio no HubSpot.
+// em_contato = cotação (Pré Cotação, Realizar Cotação); negociacao = demais etapas em aberto;
+// fechado = Emissão Realizada; perdido = Negócio perdido.
+export type StageId = "em_contato" | "negociacao" | "fechado" | "perdido";
+// Etapa do negócio no HubSpot agrupada
+export type StageKind = "won" | "open" | "lost";
 
 // Trecho do roteiro. lat/lng vêm do aeroporto (HubSpot); sem eles, usa a lista de cidades.
 export type Leg = { city: string; date: string; lat?: number; lng?: number };
 
 // Passageiro do negócio (espelho das associações negócio → contato no HubSpot).
-// O parceiro só recebe do banco os passageiros que ele cadastrou (RLS).
+// O parceiro recebe os passageiros dos negócios da própria agência (RLS).
 export type Passenger = {
   id: string;
   deal_id: string;
@@ -87,6 +68,11 @@ export type Deal = {
   seq: number;
   // Nome do negócio no HubSpot
   name: string;
+  // Etapa no HubSpot (valor interno) e agrupada: ganho, em aberto ou perdido
+  hs_stage: string;
+  stage_kind: StageKind;
+  // "Observações para parceiro" do negócio no HubSpot
+  partner_note: string;
   // false = encontrado por destino e data, mas não sinalizado no HubSpot (só a Vay vê; não remunera)
   signaled: boolean;
   // Como está no HubSpot: origem do negócio e parceiro pela empresa associada (para indicar o que corrigir)
@@ -99,7 +85,8 @@ export type Deal = {
   // Cashback final definido pela Vay; null = calculado pelas regras
   cashback_override: number | null;
   afiliado: string;
-  closed_on: string;
+  // Data de fechamento (só negócio ganho)
+  closed_on: string | null;
   legs: Leg[];
   end_date: string;
   voo: number;
@@ -112,7 +99,7 @@ export type Deal = {
   reviewed_at?: string | null;
   reviewed_by_name?: string;
   reviewed_flags?: string[];
-  // Total de passageiros (o parceiro vê a contagem, não a identidade dos que não cadastrou)
+  // Total de passageiros
   passenger_count: number;
   titular_labeled: boolean;
   // Passageiros visíveis para o usuário (carregados à parte)
@@ -146,17 +133,6 @@ export type DealNote = {
   created_at: string;
 };
 
-// Comentário sobre o cliente (histórico imutável). internal = só a Vay vê (RLS).
-export type ClientComment = {
-  id: string;
-  client_id: string;
-  body: string;
-  internal: boolean;
-  author_name: string;
-  author_email: string;
-  created_at: string;
-};
-
 export type CashbackChange = {
   id: string;
   deal_id: string;
@@ -173,6 +149,8 @@ export type BalanceEntry = {
   partner_id: string;
   kind: "in" | "out";
   amount: number;
+  // Fechamento de expedição (créditos liberados); null = lançamento manual antigo
+  expedition_id?: string | null;
   entry_date: string;
   title: string;
   note: string;

@@ -18,20 +18,31 @@ export const PROD_LABEL: Record<Product, string> = {
 
 export type Tone = "neutral" | "bluebell" | "blue" | "purple" | "red" | "yellow" | "success";
 
-// manual = status do contato que a Vay marca no sistema; os outros vêm dos negócios do HubSpot.
-export const STAGES: { id: StageId; label: string; tone: Tone; color: string; manual?: boolean }[] = [
-  { id: "novo", label: "Não contactado", tone: "neutral", color: "#CBCCD6" },
-  { id: "tentando", label: "Tentando contato", tone: "bluebell", color: "#ACB4ED", manual: true },
-  { id: "em_contato", label: "Em contato", tone: "bluebell", color: "#7F8BE0", manual: true },
-  { id: "chamar_depois", label: "Chamar depois", tone: "yellow", color: "#EBD98A", manual: true },
-  { id: "negociacao", label: "Em negociação", tone: "blue", color: "#0078D0" },
+// Etapa do cliente, na ordem de prioridade (a maior vale quando a pessoa tem vários negócios).
+export const STAGES: { id: StageId; label: string; tone: Tone; color: string }[] = [
   { id: "fechado", label: "Compra concluída", tone: "purple", color: "#473690" },
-  { id: "nao_contactar", label: "Não contactar", tone: "yellow", color: "#D8BE4A", manual: true },
-  { id: "outro_lugar", label: "Comprou em outro lugar", tone: "red", color: "#E88A86", manual: true },
+  { id: "negociacao", label: "Em negociação", tone: "blue", color: "#0078D0" },
+  { id: "em_contato", label: "Em contato", tone: "bluebell", color: "#7F8BE0" },
+  { id: "perdido", label: "Não comprou", tone: "red", color: "#E88A86" },
 ];
 
 export function stageOf(id: string) {
-  return STAGES.find((s) => s.id === id) ?? STAGES[0];
+  return STAGES.find((s) => s.id === id) ?? STAGES[STAGES.length - 1];
+}
+
+// Etapas iniciais do funil no HubSpot (Pré Cotação, Realizar Cotação): "Em contato"
+export const CONTACT_HS_STAGES = ["appointmentscheduled", "qualifiedtobuy"];
+
+// Etapa do cliente pela etapa do negócio no HubSpot
+export function dealStage(d: Pick<Deal, "stage_kind" | "hs_stage">): StageId {
+  if (d.stage_kind === "won") return "fechado";
+  if (d.stage_kind === "lost") return "perdido";
+  return CONTACT_HS_STAGES.includes(d.hs_stage) ? "em_contato" : "negociacao";
+}
+
+// A etapa mais avançada entre vários negócios
+export function bestStage(ids: StageId[]): StageId {
+  return STAGES.find((s) => ids.includes(s.id))?.id ?? "perdido";
 }
 
 export type Money = { voo: number; hotel: number; seguro: number; total: number; sold: number };

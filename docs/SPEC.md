@@ -1,7 +1,18 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.8 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.0 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.0 — o sistema passa a ser só visualização (prevalece sobre o resto do documento onde houver conflito):**
+
+1. **Nenhum dado é lançado no sistema.** Todo lançamento é feito pela equipe de atendimento no HubSpot. O sistema serve ao gestor do projeto (Vay) e às agências parceiras para visualizar. Saem: cadastro e importação de clientes, etapa e responsável marcados no sistema, comentários, vincular passageiro, trocar expedição do negócio, marcar conferido, editar cashback, comentários/arquivos por produto, lançamentos manuais no extrato e negócio lançado à mão. A lista cadastrada e os comentários foram apagados (migração 0013).
+2. **Negócio de agência parceira** = "Origem do Negócio" = **"Agência Parceira"** (ou "Afiliado", nome antigo) **+ empresa da agência associada ao negócio**, em **qualquer etapa** do funil (em aberto, ganho ou perdido).
+3. **Lista de clientes da expedição** = passageiros desses negócios cujo roteiro combina com a expedição (destino e data, §4.4). Uma linha por pessoa (contato do HubSpot; sem contato, nome completo); valores e comissão uma vez por negócio, na linha do titular (ou do primeiro passageiro que viaja).
+4. **Etapa do cliente** = etapa do negócio no HubSpot: Pré Cotação / Realizar Cotação → **Em contato**; demais etapas em aberto → **Em negociação**; Emissão Realizada → **Compra concluída**; Negócio perdido → **Não comprou**. Com vários negócios, vale a mais avançada. A observação é o campo "Observações para parceiro" do negócio.
+5. **Vínculo sempre automático.** Mais de uma expedição compatível → a de maior pontuação (aviso só informativo); aproximação → informativo. Pendências da Vay (corrigir no HubSpot): negócio **não sinalizado** compatível com uma expedição (ganho ou em aberto) e negócio da agência **sem expedição compatível**. Corrigido no HubSpot, sai da pendência na próxima sincronização. Só remunera negócio **ganho** vinculado.
+6. **Fechamento por expedição.** Os créditos só entram no saldo quando a Vay **finaliza a expedição** (botão "Finalizar expedição", disponível depois da data de fim), confirmando que ela aconteceu. O sistema calcula o ganho dos negócios ganhos vinculados e lança **um** crédito no extrato ("Créditos da expedição …", migração 0013, um por expedição). Depois disso o valor não muda (período fechado). Antes, o ganho aparece como **"a liberar"**.
+7. **Expedições**: só a Vay cria (no painel do parceiro). O parceiro só vê.
+8. **Ainda a definir:** saídas (uso dos créditos) e ajuste de cashback de pagamento misto. Por enquanto, misto fica com cashback R$ 0 e aviso informativo; lançamentos manuais antigos continuam no extrato.
 
 **Mudanças na 1.8:** conferência registra quem conferiu, quando e quais avisos existiam; aviso novo depois disso volta o negócio para "Para conferir"; cada negócio vira uma linha compacta e os detalhes/ações abrem num modal. Afeta §4.5.
 

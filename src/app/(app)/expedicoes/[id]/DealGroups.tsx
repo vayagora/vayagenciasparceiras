@@ -1,6 +1,6 @@
 import { DealRow, type DealView } from "./DealRow";
 
-// "Para conferir" no topo; os demais (conferidos e sem pendência) recolhidos.
+// Pendências (corrigir no HubSpot) no topo; os demais recolhidos.
 export function DealGroups({ views, pendingTitle, restTitle }: { views: DealView[]; pendingTitle: string; restTitle: string }) {
   const pending = views.filter((v) => v.needsReview);
   const rest = views.filter((v) => !v.needsReview);

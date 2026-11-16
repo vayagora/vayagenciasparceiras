@@ -21,8 +21,8 @@ export function NewExpeditionForm({
   return (
     <section className="panel stack" id="nova-expedicao">
       <div className="ttl">
-        <h2 className="section-title">Iniciar uma expedição</h2>
-        <Tip>Informe o essencial. Depois você cadastra os clientes e a Vay Agora cuida do restante.</Tip>
+        <h2 className="section-title">Nova expedição</h2>
+        <Tip>Os clientes entram sozinhos: são os passageiros dos negócios da agência no HubSpot com destino e datas desta expedição.</Tip>
       </div>
       <form action={action} className="form">
         <div className="form-grid">

@@ -3,29 +3,29 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dealCompanies,
   dealContacts,
-  findContacts,
   hasLabel,
+  isAgencyOrigem,
   matchPartner,
   paymentMethods,
   FIELDS,
   readLegsAny,
-  searchOpenDealsInWindow,
-  searchWonDealsInWindow,
-  type HsPerson,
+  searchActiveDealsInWindow,
+  searchAgencyDeals,
+  stageKind,
   hubspotConfig,
   pickTitular,
   readContacts,
   readTrip,
-  searchWonDeals,
   toIsoDate,
   type Association,
   type HsContact,
   type HsDeal,
+  type HubspotConfig,
 } from "./hubspot";
 import { expEnd } from "./commission";
-import { dayNum, digits, isoOf } from "./format";
-import { DEFAULT_TOL, evalDeal, sameName, samePerson } from "./matching";
-import type { Client, DealDetails, Expedition, Leg } from "./types";
+import { dayNum, isoOf } from "./format";
+import { DEFAULT_TOL, evalDeal } from "./matching";
+import type { DealDetails, Expedition, Leg, StageKind } from "./types";
 
 export type PassengerRow = {
   hubspot_contact_id: string;
@@ -75,8 +75,11 @@ export type DealRow = {
   signaled: boolean;
   hs_origem: string;
   hs_agency: string;
+  hs_stage: string;
+  stage_kind: StageKind;
+  partner_note: string;
   afiliado: string;
-  closed_on: string;
+  closed_on: string | null;
   legs: Leg[];
   end_date: string;
   voo: number;
@@ -86,29 +89,49 @@ export type DealRow = {
   payment_methods: string[];
 };
 
+type MapCfg = Pick<HubspotConfig, "origemProp" | "obsProp" | "wonStages" | "openStages" | "lostStages">;
+const DEFAULT_MAP: MapCfg = {
+  origemProp: "origem_do_negocio",
+  obsProp: "observacoes_para_parceiro",
+  wonStages: ["135525686"],
+  openStages: ["appointmentscheduled", "qualifiedtobuy", "presentationscheduled", "135850329", "contractsent", "135525685"],
+  lostStages: ["closedlost"],
+};
+
 // Sinalizado: afiliado = agência associada (parceiro). Não sinalizado: afiliado vazio (só a Vay vê),
 // hsAgency = parceiro pela empresa associada, se houver.
+// Negócio ganho precisa de serviço, valor e data de fechamento; em aberto ou perdido basta o roteiro
+// (serviço e valor podem ainda não estar preenchidos).
 export function mapDeal(
   d: HsDeal,
   afiliado: string | null,
-  opts: { signaled?: boolean; hsAgency?: string; origemProp?: string } = {},
+  opts: { signaled?: boolean; hsAgency?: string; cfg?: Partial<MapCfg> } = {},
 ): { row: DealRow } | { skip: string } {
   const p = d.properties;
+  const cfg = { ...DEFAULT_MAP, ...opts.cfg };
   const signaled = opts.signaled ?? true;
   if (signaled && !afiliado) return { skip: "sem empresa (agência) associada" };
+  const kind = stageKind(cfg, p.dealstage) ?? "won";
   const closed = toIsoDate(p.closedate);
-  if (!closed) return { skip: "sem data de fechamento" };
-  const trip = readTrip(p);
+  if (kind === "won" && !closed) return { skip: "sem data de fechamento" };
+  let trip = readTrip(p);
+  if ("skip" in trip && kind !== "won") {
+    const any = readLegsAny(p);
+    if (any) trip = { product: "voo", value: 0, legs: any.legs, end: any.end, details: {} };
+  }
   if ("skip" in trip) return { skip: trip.skip };
   return {
     row: {
       hubspot_id: d.id,
       name: String(p.dealname ?? "").trim(),
       signaled,
-      hs_origem: String(p[opts.origemProp ?? "origem_do_negocio"] ?? "").trim(),
+      hs_origem: String(p[cfg.origemProp] ?? "").trim(),
       hs_agency: opts.hsAgency ?? (signaled ? afiliado ?? "" : ""),
+      hs_stage: String(p.dealstage ?? ""),
+      stage_kind: kind,
+      partner_note: String(p[cfg.obsProp] ?? "").trim(),
       afiliado: signaled ? afiliado! : "",
-      closed_on: closed,
+      closed_on: kind === "won" ? closed : null,
       legs: trip.legs,
       end_date: trip.end,
       voo: trip.product === "voo" ? trip.value : 0,
@@ -118,50 +141,6 @@ export function mapDeal(
       payment_methods: paymentMethods(p[FIELDS.payment]),
     },
   };
-}
-
-// ---------------------------------------------------------------- Etapa do cliente pelo HubSpot
-
-export type StatusDeal = {
-  id: string;
-  kind: "won" | "open";
-  legs: Leg[];
-  end_date: string;
-  people: { contactId: string; name: string; email: string; phone: string }[];
-  note?: string; // "Observações para parceiro" do negócio
-};
-export type StatusClient = Pick<Client, "name" | "email" | "phone" | "hubspot_contact_id">;
-
-// Negócio compatível com a expedição (destino e data) em que o cliente é passageiro:
-// ganho → compra concluída; em aberto → em negociação; nenhum → null (não contactado).
-export function clientHubspotStatus(
-  c: StatusClient,
-  exp: Expedition,
-  deals: StatusDeal[],
-): { status: "fechado" | "negociacao" | null; dealId: string | null; note: string } {
-  const mine = deals.filter(
-    (d) =>
-      d.people.some((p) => samePerson(c, { hubspot_contact_id: p.contactId, email: p.email, phone: p.phone }) || sameName(c.name, p.name)) &&
-      !!evalDeal(d, exp),
-  );
-  // Observações de todos os negócios do cliente para a expedição (ganhos primeiro)
-  const ordered = [...mine.filter((d) => d.kind === "won"), ...mine.filter((d) => d.kind === "open")];
-  const note = [...new Set(ordered.map((d) => (d.note ?? "").trim()).filter(Boolean))].join("\n\n");
-  const won = mine.find((d) => d.kind === "won");
-  if (won) return { status: "fechado", dealId: won.id, note };
-  const open = mine.find((d) => d.kind === "open");
-  return open ? { status: "negociacao", dealId: open.id, note } : { status: null, dealId: null, note: "" };
-}
-
-// Cliente cadastrado ↔ contato do HubSpot: e-mail; sem e-mail, telefone.
-export function linkContact(c: StatusClient, people: HsPerson[]): HsPerson | undefined {
-  const e = c.email.trim().toLowerCase();
-  if (e) {
-    const byEmail = people.find((p) => p.email === e);
-    if (byEmail) return byEmail;
-  }
-  const ph = digits(c.phone);
-  return ph ? people.find((p) => p.phones.some((x) => digits(x) === ph)) : undefined;
 }
 
 // Negócio não sinalizado só é guardado se combinar com alguma expedição (do parceiro da empresa associada, se houver).
@@ -197,17 +176,14 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     const partnerIdByAfiliado = new Map((partners ?? []).map((p) => [String(p.afiliado), String(p.id)]));
     const exps = (expRows ?? []) as Expedition[];
 
-    // 1) sinalizados (origem Afiliado)  2) qualquer negócio ganho com viagem perto das expedições
-    const flagged = await searchWonDeals(cfg);
+    // 1) sinalizados (origem da agência, qualquer etapa)
+    // 2) qualquer negócio ganho ou em aberto com viagem perto das expedições (para achar os não sinalizados)
+    const flagged = await searchAgencyDeals(cfg);
     let nearby: HsDeal[] = [];
-    let windowFrom = "";
-    let windowTo = "";
     if (exps.length) {
       const starts = exps.map((e) => e.start_date).sort();
       const ends = exps.map((e) => expEnd(e)).sort();
-      windowFrom = isoOf(dayNum(starts[0]) - 30);
-      windowTo = isoOf(dayNum(ends[ends.length - 1]) + DEFAULT_TOL.after);
-      nearby = await searchWonDealsInWindow(cfg, windowFrom, windowTo);
+      nearby = await searchActiveDealsInWindow(cfg, isoOf(dayNum(starts[0]) - 30), isoOf(dayNum(ends[ends.length - 1]) + DEFAULT_TOL.after));
     }
     const fromFlagged = new Set(flagged.map((d) => d.id));
     const hs = [...flagged, ...nearby.filter((d) => !fromFlagged.has(d.id))];
@@ -217,28 +193,30 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     const companies = await dealCompanies(cfg, hs.map((d) => d.id));
     const skipped: Skipped[] = [];
     const keptUnsignaled: string[] = [];
+    const keptSignaled: string[] = [];
     let n = 0;
 
     for (const h of hs) {
       const names = companies.get(h.id) ?? [];
       const partner = matchPartner(names, afiliados);
-      const isAfiliado = String(h.properties[cfg.origemProp] ?? "").trim() === cfg.origemValue;
-      const signaled = isAfiliado && !!partner;
+      const signaled = isAgencyOrigem(cfg, h.properties[cfg.origemProp]) && !!partner;
       const mapped = signaled
-        ? mapDeal(h, partner, { origemProp: cfg.origemProp })
-        : mapDeal(h, null, { signaled: false, hsAgency: partner ?? "", origemProp: cfg.origemProp });
+        ? mapDeal(h, partner, { cfg })
+        : mapDeal(h, null, { signaled: false, hsAgency: partner ?? "", cfg });
       if ("skip" in mapped) {
         if (fromFlagged.has(h.id)) skipped.push({ id: h.id, reason: mapped.skip });
         continue;
       }
       if (!signaled) {
+        // Negócio perdido e não sinalizado não interessa
+        if (mapped.row.stage_kind === "lost") continue;
         if (!matchesSomeExpedition(mapped.row, exps, partnerIdByAfiliado)) {
           if (fromFlagged.has(h.id))
             skipped.push({ id: h.id, reason: names.length ? `empresa "${names.join(", ")}" não é parceiro cadastrado` : "sem empresa (agência) associada" });
           continue;
         }
         keptUnsignaled.push(h.id);
-      }
+      } else keptSignaled.push(h.id);
       const row = mapped.row;
       const list = assocs.get(h.id) ?? [];
       const { data: existing } = await admin.from("deals").select("id").eq("hubspot_id", h.id).maybeSingle();
@@ -275,8 +253,12 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
       }
       n++;
     }
-    // Etapa e observação de cada cliente cadastrado
-    await syncClients(admin, cfg, exps, hs, assocs, contacts, windowFrom, windowTo);
+    // Negócios da agência que saíram do funil ou deixaram de ser da agência saem do sistema.
+    // (Os créditos de expedição finalizada já estão congelados no extrato.)
+    let gone = admin.from("deals").delete().eq("signaled", true).not("hubspot_id", "is", null);
+    if (keptSignaled.length) gone = gone.not("hubspot_id", "in", `(${keptSignaled.join(",")})`);
+    const { error: gErr } = await gone;
+    if (gErr) throw new Error(`limpeza: ${gErr.message}`);
 
     // Não sinalizados que deixaram de combinar (ou foram corrigidos) saem da lista.
     let cleanup = admin.from("deals").delete().eq("signaled", false).not("hubspot_id", "is", null);
@@ -286,64 +268,5 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     return finish({ ok: true, deals: n, skipped, unsignaled: keptUnsignaled.length });
   } catch (e) {
     return finish({ ok: false, deals: 0, skipped: [], error: e instanceof Error ? e.message : String(e) });
-  }
-}
-
-// Liga clientes a contatos, calcula a etapa pelo HubSpot e traz as "Observações para parceiro" dos negócios.
-async function syncClients(
-  admin: SupabaseClient,
-  cfg: NonNullable<ReturnType<typeof hubspotConfig>>,
-  exps: Expedition[],
-  won: HsDeal[],
-  wonAssocs: Map<string, Association[]>,
-  wonContacts: Map<string, HsContact>,
-  from: string,
-  to: string,
-) {
-  const { data, error } = await admin
-    .from("clients")
-    .select("id, expedition_id, name, email, phone, hubspot_contact_id, hubspot_status, hs_status, hs_deal_id, hs_note");
-  if (error) throw new Error(`clientes: ${error.message}`);
-  const clients = (data ?? []) as (StatusClient & Pick<Client, "id" | "expedition_id" | "hubspot_status" | "hs_status" | "hs_deal_id" | "hs_note">)[];
-  if (!clients.length) return;
-
-  const unlinked = clients.filter((c) => !c.hubspot_contact_id);
-  const people = unlinked.length ? await findContacts(cfg, unlinked.map((c) => c.email), unlinked.map((c) => c.phone)) : [];
-  const contactOf = new Map(clients.map((c) => [c.id, c.hubspot_contact_id ?? linkContact(c, people)?.id ?? null]));
-
-  const open = from ? await searchOpenDealsInWindow(cfg, from, to) : [];
-  const openAssocs = await dealContacts(cfg, open.map((d) => d.id));
-  const openContacts = await readContacts(cfg, [...openAssocs.values()].flat().map((a) => a.contactId));
-  const toStatus = (list: HsDeal[], kind: StatusDeal["kind"], as: Map<string, Association[]>, cs: Map<string, HsContact>) =>
-    list.flatMap((d): StatusDeal[] => {
-      const trip = readLegsAny(d.properties);
-      if (!trip) return [];
-      const all = as.get(d.id) ?? [];
-      const anyPassenger = all.some((a) => hasLabel(a, cfg.passengerLabel));
-      const people = all.filter((a) => !anyPassenger || hasLabel(a, cfg.passengerLabel)).map((a) => {
-        const c = cs.get(a.contactId);
-        return { contactId: a.contactId, name: c?.name ?? "", email: c?.email ?? "", phone: c?.phone ?? "" };
-      });
-      return [{ id: d.id, kind, legs: trip.legs, end_date: trip.end, people, note: String(d.properties[cfg.obsProp] ?? "").trim() }];
-    });
-  const statusDeals = [...toStatus(won, "won", wonAssocs, wonContacts), ...toStatus(open, "open", openAssocs, openContacts)];
-  const expById = new Map(exps.map((e) => [e.id, e]));
-
-  for (const c of clients) {
-    const exp = expById.get(c.expedition_id);
-    if (!exp) continue;
-    const contactId = contactOf.get(c.id) ?? null;
-    const st = clientHubspotStatus({ ...c, hubspot_contact_id: contactId }, exp, statusDeals);
-    const patch = {
-      hubspot_contact_id: contactId,
-      hubspot_status: c.hubspot_status ?? (contactId ? "existente" : null),
-      hs_status: st.status,
-      hs_deal_id: st.dealId,
-      hs_note: st.note,
-    };
-    const changed = (Object.keys(patch) as (keyof typeof patch)[]).some((k) => (c[k] ?? null) !== (patch[k] ?? null));
-    if (!changed) continue;
-    const { error: uErr } = await admin.from("clients").update(patch).eq("id", c.id);
-    if (uErr) throw new Error(`cliente ${c.id}: ${uErr.message}`);
   }
 }

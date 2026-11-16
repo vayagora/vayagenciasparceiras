@@ -7,11 +7,10 @@ export const metadata = { title: "Parceiros" };
 
 export default async function PartnersPage() {
   await requireVay();
-  const { partners, exps, clients } = await loadWorld();
+  const { partners, exps, ledger } = await loadWorld();
   const rows = partners.map((p) => {
     const ex = exps.filter((e) => e.partner_id === p.id);
-    const ids = new Set(ex.map((e) => e.id));
-    return { p, exps: ex.length, clients: clients.filter((c) => ids.has(c.expedition_id)).length };
+    return { p, exps: ex.length, clients: ex.reduce((a, e) => a + ledger.lines(e).length, 0) };
   });
 
   return (
@@ -22,8 +21,8 @@ export default async function PartnersPage() {
           <div className="ttl">
             <h1 className="page-title">Parceiros</h1>
             <Tip>
-              Cada parceiro enxerga apenas as próprias expedições e os clientes que cadastrou. O afiliado precisa ser igual ao nome da empresa
-              associada aos negócios no HubSpot.
+              Cada parceiro enxerga apenas as próprias expedições e os clientes dos negócios da própria agência no HubSpot. O nome
+              (afiliado) precisa ser igual ao nome da empresa associada aos negócios no HubSpot.
             </Tip>
           </div>
         </div>

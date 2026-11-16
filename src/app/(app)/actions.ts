@@ -4,14 +4,10 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AIRPORTS } from "@/lib/airports";
-import { cityOf } from "@/lib/cities";
-import { parseRows, type ClientRow } from "@/lib/csv";
-import { requireSession, requireVay } from "@/lib/data";
-import { dayNum, digits, lower, plural, todayIso } from "@/lib/format";
-import { calculatedCashback } from "@/lib/matching";
+import { loadWorld, requireVay } from "@/lib/data";
+import { dayNum, lower, plural, todayIso } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
-import type { Leg } from "@/lib/types";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -28,14 +24,14 @@ function airportCode(v: string): string | null {
 }
 
 export async function createExpedition(_: FormState, f: FormData): Promise<FormState> {
-  const s = await requireSession();
+  const s = await requireVay();
   const name = str(f, "name");
   const city = str(f, "city");
   const start = str(f, "start_date");
   const end = str(f, "end_date");
   const arrivalRaw = str(f, "arrival_airport");
   const departureRaw = str(f, "departure_airport");
-  const partnerId = s.isVay ? str(f, "partner_id") : s.partner?.id;
+  const partnerId = str(f, "partner_id");
 
   if (!name || !city || !isIsoDate(start) || !isIsoDate(end) || !arrivalRaw || !partnerId)
     return { error: "Preencha nome, destino, datas de início e fim e o aeroporto de chegada." };
@@ -64,373 +60,58 @@ export async function createExpedition(_: FormState, f: FormData): Promise<FormS
   if (error || !data) return { error: "Não foi possível criar a expedição." };
 
   revalidatePath("/", "layout");
-  redirect(`/expedicoes/${data.id}?novo=1`);
+  redirect(`/expedicoes/${data.id}`);
 }
 
-// ---------------------------------------------------------------- Clientes
+// ---------------------------------------------------------------- Fechamento da expedição
 
-async function insertClients(expId: string, rows: ClientRow[]) {
-  const s = await requireSession();
-  const supabase = await createClient();
-  const { data: existing, error } = await supabase
-    .from("clients")
-    .select("email, phone")
-    .eq("expedition_id", expId);
-  if (error) throw new Error(error.message);
-
-  const seen = existing ?? [];
-  const fresh: ClientRow[] = [];
-  let dup = 0;
-  for (const r of rows) {
-    const e = lower(r.email);
-    const ph = digits(r.phone);
-    const isDup = [...seen, ...fresh].some(
-      (c) => (e && lower(c.email) === e) || (!e && ph && digits(c.phone) === ph),
-    );
-    if (isDup) dup++;
-    else fresh.push({ name: r.name, email: e, phone: r.phone });
-  }
-  if (fresh.length) {
-    const { error: insErr } = await supabase.from("clients").insert(
-      fresh.map((r) => ({ ...r, expedition_id: expId, stage: "auto", created_by: s.profile.id })),
-    );
-    if (insErr) throw new Error(insErr.message);
-  }
-  revalidatePath("/", "layout");
-  return { added: fresh.length, dup };
-}
-
-export async function addClient(expId: string, _: FormState, f: FormData): Promise<FormState> {
-  const name = str(f, "name");
-  const email = str(f, "email");
-  const phone = str(f, "phone");
-  if (!name) return { error: "Informe o nome do cliente." };
-  if (!isEmail(email)) return { error: "Informe um e-mail válido." };
-  try {
-    const res = await insertClients(expId, [{ name, email, phone }]);
-    if (!res.added) return { error: "Esse cliente já está nesta expedição." };
-  } catch {
-    return { error: "Não foi possível cadastrar o cliente." };
-  }
-  return { ok: `${name} foi cadastrado. A Vay Agora fará o primeiro contato.` };
-}
-
-export async function importClients(expId: string, _: FormState, f: FormData): Promise<FormState> {
-  const rows = parseRows(str(f, "rows"));
-  if (!rows.length) return { error: "Nenhum cliente encontrado. Confira as colunas: nome, e-mail, telefone." };
-  try {
-    const res = await insertClients(expId, rows);
-    return {
-      ok:
-        plural(res.added, "cliente cadastrado", "clientes cadastrados") +
-        (res.dup ? ` · ${res.dup} já estava${res.dup === 1 ? "" : "m"} nesta expedição` : "") +
-        ".",
-    };
-  } catch {
-    return { error: "Não foi possível importar os clientes." };
-  }
-}
-
-// Status do contato que a Vay marca no sistema ("auto" = não contactado).
-const CONTACT_STAGES = ["auto", "tentando", "em_contato", "chamar_depois", "nao_contactar", "outro_lugar"];
-
-// Etapa e responsável editados na própria linha da tabela (protótipo v37). Só a Vay.
-export async function setClientStage(clientId: string, stage: string): Promise<FormState> {
-  await requireVay();
-  if (!CONTACT_STAGES.includes(stage)) return { error: "Etapa inválida." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("clients").update({ stage, last_follow_up: todayIso() }).eq("id", clientId);
-  if (error) return { error: "Não foi possível salvar a etapa." };
-  revalidatePath("/", "layout");
-  return { ok: "Etapa salva." };
-}
-
-export async function setClientOwner(clientId: string, ownerId: string | null): Promise<FormState> {
-  await requireVay();
-  const supabase = await createClient();
-  let ownerName = "";
-  if (ownerId) {
-    const { data: p } = await supabase.from("profiles").select("full_name, email, role").eq("id", ownerId).single();
-    if (!p || p.role !== "vay") return { error: "Responsável inválido." };
-    ownerName = p.full_name || p.email;
-  }
-  const { error } = await supabase.from("clients").update({ owner_id: ownerId, owner_name: ownerName }).eq("id", clientId);
-  if (error) return { error: "Não foi possível salvar o responsável." };
-  revalidatePath("/", "layout");
-  return { ok: "Responsável salvo." };
-}
-
-// Vincula um passageiro de um negócio do HubSpot a um cliente da lista (quando contato, e-mail, telefone e nome
-// não bateram). Grava no cliente o contato do HubSpot (ou, sem ele, o e-mail/telefone do passageiro) e deixa
-// um comentário interno registrando o vínculo.
-export async function linkPassengerToClient(passengerId: string, clientId: string): Promise<FormState> {
+// A Vay confirma que a expedição aconteceu: os créditos (ganho dos negócios ganhos vinculados, calculado agora)
+// são lançados uma única vez no extrato do parceiro. Depois disso o valor não muda (período fechado).
+export async function finishExpedition(expId: string): Promise<FormState> {
   const s = await requireVay();
   const supabase = await createClient();
-  const [{ data: p }, { data: c }] = await Promise.all([
-    supabase.from("deal_passengers").select("name, email, phone, hubspot_contact_id, deal_id").eq("id", passengerId).single(),
-    supabase.from("clients").select("id, name, email, phone, expedition_id").eq("id", clientId).single(),
-  ]);
-  if (!p || !c) return { error: "Passageiro ou cliente não encontrado." };
-  const [{ data: d }, { data: e }] = await Promise.all([
-    supabase.from("deals").select("hubspot_id, seq, afiliado").eq("id", p.deal_id).single(),
-    supabase.from("expeditions").select("partner_id, partners(afiliado)").eq("id", c.expedition_id).single(),
-  ]);
-  const partnerAfiliado = (e?.partners as unknown as { afiliado: string } | null)?.afiliado;
-  if (!d || !partnerAfiliado || d.afiliado !== partnerAfiliado) return { error: "O negócio não é deste parceiro." };
+  const { exps, ledger } = await loadWorld();
+  const exp = exps.find((e) => e.id === expId);
+  if (!exp) return { error: "Expedição não encontrada." };
+  if (exp.finished_at) return { error: "Esta expedição já foi finalizada." };
+  if (dayNum(exp.start_date) + Number(exp.days) - 1 >= dayNum(todayIso()))
+    return { error: "Só é possível finalizar depois da data de fim da expedição." };
 
-  const patch: Record<string, string> = {};
-  if (p.hubspot_contact_id) patch.hubspot_contact_id = p.hubspot_contact_id;
-  else if (p.email) patch.email = p.email;
-  else if (p.phone) patch.phone = p.phone;
-  else return { error: "O passageiro não tem contato, e-mail nem telefone para vincular." };
-  if (p.email && !c.email) patch.email = p.email;
-  const { error } = await supabase.from("clients").update(patch).eq("id", clientId);
-  if (error) return { error: "Não foi possível vincular." };
+  const deals = ledger.dealsForExp(exp.id);
+  const total = Math.round(ledger.earnings(exp.id).total * 100) / 100;
+  const who = s.profile.full_name || s.profile.email;
+  const now = new Date().toISOString();
 
-  const no = `#${d.hubspot_id ?? d.seq}`;
-  await supabase.from("client_comments").insert({
-    client_id: clientId,
-    body: `Vinculado manualmente ao passageiro “${p.name}” do negócio ${no}` + (p.hubspot_contact_id ? ` (contato ${p.hubspot_contact_id} no HubSpot).` : "."),
-    internal: true,
-    author_id: s.profile.id,
-    author_name: s.profile.full_name || s.profile.email,
-    author_email: s.profile.email,
-  });
-  revalidatePath("/", "layout");
-  return { ok: `${p.name} vinculado a ${c.name}.` };
-}
+  // Marca primeiro (só a primeira tentativa passa: finished_at ainda vazio)
+  const { data: marked, error: mErr } = await supabase
+    .from("expeditions")
+    .update({ finished_at: now, finished_by: s.profile.id, finished_by_name: who })
+    .eq("id", exp.id)
+    .is("finished_at", null)
+    .select("id");
+  if (mErr) return { error: "Não foi possível finalizar a expedição." };
+  if (!marked?.length) return { error: "Esta expedição já foi finalizada." };
 
-// Comentário sobre o cliente (protótipo v37). Só a Vay; o autor vem da sessão, não do formulário.
-export async function addClientComment(clientId: string, body: string, internal: boolean): Promise<FormState> {
-  const s = await requireVay();
-  const text = body.trim();
-  if (!text) return { error: "Escreva o comentário." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("client_comments").insert({
-    client_id: clientId,
-    body: text,
-    internal,
-    author_id: s.profile.id,
-    author_name: s.profile.full_name || s.profile.email,
-    author_email: s.profile.email,
-  });
-  if (error) return { error: "Não foi possível salvar o comentário." };
-  await supabase.from("clients").update({ last_follow_up: todayIso() }).eq("id", clientId);
-  revalidatePath("/", "layout");
-  return { ok: internal ? "Comentário interno adicionado." : "Comentário adicionado. O parceiro já vê." };
-}
-
-// ---------------------------------------------------------------- Cashback editado pela Vay (SPEC 1.3)
-
-// value null = volta ao calculado pelas regras. Toda alteração vai para o histórico.
-export async function setCashback(dealId: string, raw: string | null, note: string): Promise<FormState> {
-  const s = await requireVay();
-  let value: number | null = null;
-  if (raw !== null && raw.trim() !== "") {
-    const v = raw.replace(/[R$\s]/g, "");
-    value = Math.round((Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v) || NaN) * 100) / 100;
-    if (!(value >= 0)) return { error: "Informe um valor válido (0 ou mais)." };
-  }
-  const supabase = await createClient();
-  const { data: d, error: rErr } = await supabase.from("deals").select("*").eq("id", dealId).single();
-  if (rErr || !d) return { error: "Negócio não encontrado." };
-  const old = d.cashback_override === null ? null : Number(d.cashback_override);
-  if (old === value) return { ok: "Nada mudou." };
-  const calculated = calculatedCashback({
-    ...d,
-    voo: Number(d.voo),
-    hotel: Number(d.hotel),
-    seguro: Number(d.seguro),
-    payment_methods: d.payment_methods ?? [],
-    cashback_override: null,
-    passengers: [],
-  });
-  const { error: hErr } = await supabase.from("deal_cashback_history").insert({
-    deal_id: dealId,
-    old_value: old,
-    new_value: value,
-    calculated: Math.round(calculated * 100) / 100,
-    note: note.trim(),
-    changed_by: s.profile.id,
-    changed_by_name: s.profile.full_name || s.profile.email,
-  });
-  if (hErr) return { error: "Não foi possível registrar a alteração." };
-  const { error } = await supabase.from("deals").update({ cashback_override: value }).eq("id", dealId);
-  if (error) return { error: "Não foi possível salvar o cashback." };
-  revalidatePath("/", "layout");
-  return { ok: value === null ? "Voltou ao cashback calculado." : "Cashback atualizado." };
-}
-
-// ---------------------------------------------------------------- Saldo (extrato)
-
-const whoName = (s: Awaited<ReturnType<typeof requireVay>>) => s.profile.full_name || s.profile.email;
-
-export async function addBalanceEntry(partnerId: string, _: FormState, f: FormData): Promise<FormState> {
-  const s = await requireVay();
-  const kind = str(f, "kind");
-  const title = str(f, "title");
-  const note = str(f, "note");
-  const date = str(f, "entry_date") || todayIso();
-  const v = str(f, "amount").replace(/[R$\s]/g, "");
-  const amount = Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v);
-  if (kind !== "in" && kind !== "out") return { error: "Escolha entrada ou saída." };
-  if (!(amount > 0)) return { error: "Informe um valor maior que zero." };
-  if (!title) return { error: "Informe o motivo." };
-  if (!isIsoDate(date)) return { error: "Data inválida." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("balance_entries").insert({
-    partner_id: partnerId,
-    kind,
-    amount: Math.round(amount * 100) / 100,
-    title,
-    note,
-    entry_date: date,
-    created_by: s.profile.id,
-    created_by_name: whoName(s),
-  });
-  if (error) return { error: "Não foi possível lançar." };
-  revalidatePath("/", "layout");
-  return { ok: kind === "in" ? "Entrada lançada no extrato." : "Saída lançada no extrato." };
-}
-
-export async function deleteBalanceEntry(entryId: string) {
-  await requireVay();
-  const supabase = await createClient();
-  const { error } = await supabase.from("balance_entries").delete().eq("id", entryId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/", "layout");
-}
-
-// ---------------------------------------------------------------- Comentários e arquivos dos produtos
-
-const PRODUCT_IDS = ["voo", "hotel", "seguro"];
-
-// O arquivo já foi enviado ao Storage pelo navegador (bucket "anexos", pasta <deal_id>/<produto>/).
-export async function addDealNote(dealId: string, product: string, body: string, file?: { path: string; name: string }): Promise<FormState> {
-  const s = await requireVay();
-  if (!PRODUCT_IDS.includes(product)) return { error: "Produto inválido." };
-  const text = body.trim();
-  if (!text && !file) return { error: "Escreva um comentário ou escolha um arquivo." };
-  if (file && !file.path.startsWith(`${dealId}/${product}/`)) return { error: "Arquivo inválido." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("deal_notes").insert({
-    deal_id: dealId,
-    product,
-    body: text,
-    file_path: file?.path ?? null,
-    file_name: file?.name ?? null,
-    created_by: s.profile.id,
-    created_by_name: whoName(s),
-  });
-  if (error) return { error: "Não foi possível salvar." };
-  revalidatePath("/", "layout");
-  return { ok: "Adicionado. O parceiro também vê." };
-}
-
-export async function deleteDealNote(noteId: string) {
-  await requireVay();
-  const supabase = await createClient();
-  const { data } = await supabase.from("deal_notes").select("file_path").eq("id", noteId).single();
-  if (data?.file_path) await supabase.storage.from("anexos").remove([data.file_path]);
-  const { error } = await supabase.from("deal_notes").delete().eq("id", noteId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/", "layout");
-}
-
-// Link temporário para baixar um anexo (as regras de acesso do Storage valem para quem pede).
-export async function attachmentUrl(path: string): Promise<string | null> {
-  await requireSession();
-  const supabase = await createClient();
-  const { data } = await supabase.storage.from("anexos").createSignedUrl(path, 60);
-  return data?.signedUrl ?? null;
-}
-
-// ---------------------------------------------------------------- Negócios
-
-export async function assignDeal(dealId: string, value: string) {
-  await requireVay();
-  const patch =
-    value === "auto"
-      ? { override_expedition_id: null, override_none: false }
-      : value === "none"
-        ? { override_expedition_id: null, override_none: true }
-        : { override_expedition_id: value, override_none: false };
-  const supabase = await createClient();
-  const { error } = await supabase.from("deals").update(patch).eq("id", dealId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/", "layout");
-}
-
-// Conferência: guarda quem conferiu, quando e quais avisos estavam no negócio (flagKeys).
-// O registro fica em deal_reviews (só a Vay lê); deals.reviewed é o que o restante do sistema usa.
-export async function setReviewed(dealId: string, reviewed: boolean, flagKeys: string[] = []) {
-  const s = await requireVay();
-  const supabase = await createClient();
-  if (reviewed) {
-    const { error } = await supabase.from("deal_reviews").upsert({
-      deal_id: dealId,
-      flags: flagKeys.filter((k) => /^[a-z_]+$/.test(k)),
-      reviewed_by: s.profile.id,
-      reviewed_by_name: s.profile.full_name || s.profile.email,
-      reviewed_at: new Date().toISOString(),
+  if (total > 0) {
+    const { error } = await supabase.from("balance_entries").insert({
+      partner_id: exp.partner_id,
+      expedition_id: exp.id,
+      kind: "in",
+      amount: total,
+      entry_date: todayIso(),
+      title: `Créditos da expedição ${exp.name}`,
+      note: plural(deals.length, "negócio", "negócios"),
+      created_by: s.profile.id,
+      created_by_name: who,
     });
-    if (error) throw new Error(error.message);
-  } else {
-    const { error } = await supabase.from("deal_reviews").delete().eq("deal_id", dealId);
-    if (error) throw new Error(error.message);
-  }
-  const { error } = await supabase.from("deals").update({ reviewed }).eq("id", dealId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/", "layout");
-}
-
-// Lançamento manual de um negócio fechado (até a sincronização com o HubSpot entrar).
-export async function createDeal(afiliado: string, _: FormState, f: FormData): Promise<FormState> {
-  await requireVay();
-  const contact_name = str(f, "contact_name");
-  const email = lower(str(f, "email"));
-  const phone = str(f, "phone");
-  const others = parseRows(str(f, "others"));
-  const closed_on = str(f, "closed_on");
-  const end_date = str(f, "end_date");
-  const legs: Leg[] = [0, 1, 2]
-    .map((i) => ({ city: str(f, `leg_city_${i}`), date: str(f, `leg_date_${i}`) }))
-    .filter((l) => l.city && l.date);
-  // Aceita "1.234,56" (padrão BR) e "1234.56"
-  const money = (k: string) => {
-    const v = str(f, k).replace(/[R$\s]/g, "");
-    return Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v) || 0;
-  };
-  const voo = money("voo");
-  const hotel = money("hotel");
-  const seguro = money("seguro");
-
-  if (!contact_name) return { error: "Informe o nome do cliente." };
-  if (email && !isEmail(email)) return { error: "E-mail inválido." };
-  if (others.some((o) => o.email && !isEmail(o.email))) return { error: "Confira o e-mail dos outros passageiros." };
-  if (!isIsoDate(closed_on) || !isIsoDate(end_date)) return { error: "Informe as datas de fechamento e de volta." };
-  if (!legs.length) return { error: "Informe pelo menos um trecho (cidade e data)." };
-  if (legs.some((l) => !cityOf(l.city) || !isIsoDate(l.date))) return { error: "Confira as cidades e datas dos trechos." };
-  if (voo + hotel + seguro <= 0) return { error: "Informe o valor de pelo menos um produto." };
-
-  const supabase = await createClient();
-  const { data: deal, error } = await supabase
-    .from("deals")
-    .insert({ afiliado, closed_on, end_date, legs, voo, hotel, seguro })
-    .select("id")
-    .single();
-  if (error || !deal) return { error: "Não foi possível registrar o negócio." };
-  const passengers = [
-    { name: contact_name, email, phone, is_titular: true },
-    ...others.map((o) => ({ name: o.name, email: lower(o.email), phone: o.phone, is_titular: false })),
-  ].map((p, position) => ({ ...p, deal_id: deal.id, position }));
-  const { error: pErr } = await supabase.from("deal_passengers").insert(passengers);
-  if (pErr) {
-    await supabase.from("deals").delete().eq("id", deal.id);
-    return { error: "Não foi possível registrar os passageiros do negócio." };
+    if (error) {
+      // Desfaz a marcação para poder tentar de novo
+      await supabase.from("expeditions").update({ finished_at: null, finished_by: null, finished_by_name: "" }).eq("id", exp.id);
+      return { error: "Não foi possível lançar os créditos no extrato." };
+    }
   }
   revalidatePath("/", "layout");
-  return { ok: "Negócio registrado e vinculado pelas regras de afiliado, data e destino." };
+  return { ok: total > 0 ? "Expedição finalizada e créditos lançados no extrato." : "Expedição finalizada (sem créditos a lançar)." };
 }
 
 // Sincronização sob demanda (a agendada usa /api/cron/sync).

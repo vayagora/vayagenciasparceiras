@@ -1,44 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { buildStatement } from "./balance";
+import { buildStatement, toRelease } from "./balance";
 import { Ledger } from "./ledger";
-import type { BalanceEntry, Client, Deal, Expedition, Partner } from "./types";
+import type { BalanceEntry, Deal, Expedition, Partner } from "./types";
 
 const jt: Partner = { id: "pJT", name: "JT Viajar e Correr", afiliado: "JT Viajar e Correr", contact_email: null, created_at: "" };
 const outro: Partner = { ...jt, id: "pX", name: "Outra", afiliado: "Outra" };
 const bkk: Expedition = { id: "e1", partner_id: "pJT", name: "Tailândia 2026", city: "Tailândia", start_date: "2026-12-01", days: 15, arrival_airport: "BKK", departure_airport: "GRU", created_at: "" };
 
-const deal = (id: string, closed: string, voo: number, afiliado = "JT Viajar e Correr"): Deal => ({
-  id, hubspot_id: id, seq: 1, name: "", signaled: true, hs_origem: "Afiliado", hs_agency: afiliado, details: {}, payment_methods: [], cashback_override: null,
-  afiliado, closed_on: closed, legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16",
+const deal = (id: string, voo: number, afiliado = "JT Viajar e Correr", over: Partial<Deal> = {}): Deal => ({
+  id, hubspot_id: id, seq: 1, name: "", hs_stage: "135525686", stage_kind: "won", partner_note: "", signaled: true, hs_origem: "Afiliado", hs_agency: afiliado,
+  details: {}, payment_methods: [], cashback_override: null, afiliado, closed_on: "2026-10-09",
+  legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16",
   voo, hotel: 0, seguro: 0, override_expedition_id: null, override_none: false, reviewed: false,
-  passenger_count: 1, titular_labeled: true, passengers: [],
+  passenger_count: 1, titular_labeled: true, passengers: [], ...over,
 });
-const entry = (id: string, kind: "in" | "out", amount: number, date: string, partner_id = "pJT"): BalanceEntry => ({
-  id, partner_id, kind, amount, entry_date: date, title: kind === "in" ? "Bonificação" : "Passagem da guia", note: "", created_by_name: "Gabriel", created_at: "",
+const entry = (id: string, kind: "in" | "out", amount: number, date: string, over: Partial<BalanceEntry> = {}): BalanceEntry => ({
+  id, partner_id: "pJT", kind, amount, entry_date: date, title: kind === "in" ? "Bonificação" : "Passagem da guia", note: "", created_by_name: "Gabriel", created_at: "", ...over,
 });
-const clients: Client[] = [];
 
-describe("extrato do saldo", () => {
-  const ledger = new Ledger([deal("100", "2026-10-09", 9395), deal("200", "2026-10-14", 13160), deal("300", "2026-10-01", 5000, "Outra")], [jt, outro], [bkk], clients);
-
-  it("comissões entram sozinhas; lançamentos manuais somam e subtraem; saldo corrente", () => {
-    const st = buildStatement(jt, ledger, [entry("a", "in", 100, "2026-10-10"), entry("b", "out", 300, "2026-10-20"), entry("z", "in", 999, "2026-10-10", "pX")]);
-    // 9395 × 3% = 281,85 · 13160 × 3% = 394,80
+describe("extrato do saldo (créditos liberados pelo fechamento da expedição)", () => {
+  it("só lançamentos entram no saldo: fechamento da expedição + manuais antigos; saldo corrente", () => {
+    const st = buildStatement(
+      jt,
+      [
+        entry("f", "in", 676.65, "2026-12-20", { expedition_id: "e1", title: "Créditos da expedição Tailândia 2026", note: "2 negócios" }),
+        entry("b", "out", 300, "2026-12-22"),
+        entry("z", "in", 999, "2026-12-10", { partner_id: "pX" }),
+      ],
+      [bkk],
+    );
     expect(st.rows.map((r) => [r.date, r.amount, r.balance])).toEqual([
-      ["2026-10-20", -300, 476.65],
-      ["2026-10-14", 394.8, 776.65],
-      ["2026-10-10", 100, 381.85],
-      ["2026-10-09", 281.85, 281.85],
+      ["2026-12-22", -300, 376.65],
+      ["2026-12-20", 676.65, 676.65],
     ]);
-    expect(st.balance).toBe(476.65);
-    expect(st.totalIn).toBe(776.65);
-    expect(st.totalOut).toBe(300);
-    expect(st.rows[0]).toMatchObject({ kind: "out", origin: "Manual · Gabriel", entryId: "b" });
-    expect(st.rows[3]).toMatchObject({ kind: "in", title: "Comissão · Voo", sub: "Tailândia 2026", origin: "HubSpot · negócio #100" });
+    expect(st.balance).toBe(376.65);
+    expect(st.rows[1]).toMatchObject({ kind: "in", sub: "Tailândia 2026", origin: "Fechamento da expedição · Gabriel" });
+    expect(st.rows[0]).toMatchObject({ origin: "Manual · Gabriel" });
   });
 
-  it("negócio de outro parceiro e lançamento de outro parceiro não entram", () => {
-    const st = buildStatement(jt, ledger, [entry("z", "in", 999, "2026-10-10", "pX")]);
-    expect(st.rows.every((r) => !r.key.includes("300") && r.entryId !== "z")).toBe(true);
+  it("comissão de expedição não finalizada fica a liberar, fora do saldo", () => {
+    const ledger = new Ledger([deal("100", 9395), deal("200", 13160), deal("300", 5000, "Outra")], [jt, outro], [bkk]);
+    expect(buildStatement(jt, [], [bkk]).balance).toBe(0);
+    // 9395 × 3% = 281,85 · 13160 × 3% = 394,80
+    expect(toRelease(jt, ledger, [bkk])).toEqual([{ exp: bkk, total: 676.65 }]);
+    // finalizada: sai do "a liberar"
+    expect(toRelease(jt, ledger, [{ ...bkk, finished_at: "2026-12-20T12:00:00Z" }])).toEqual([]);
+  });
+
+  it("negócio em aberto não entra no a liberar", () => {
+    const ledger = new Ledger([deal("100", 9395, "JT Viajar e Correr", { stage_kind: "open", closed_on: null })], [jt], [bkk]);
+    expect(toRelease(jt, ledger, [bkk])).toEqual([]);
   });
 });

@@ -1,209 +1,47 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { CITIES } from "@/lib/cities";
-import { parseRows } from "@/lib/csv";
-import { Tip } from "@/components/ui";
-import { addClient, createDeal, importClients, type FormState } from "../../actions";
+import { useRef, useState, useTransition } from "react";
+import { finishExpedition, type FormState } from "../../actions";
 
-function Feedback({ state }: { state: FormState }) {
-  if (state?.error) return <div className="error" role="alert">{state.error}</div>;
-  if (state?.ok) return <div className="notice" role="status">{state.ok}</div>;
-  return null;
-}
-
-// ---------- Parceiro: cadastrar e importar clientes ----------
-
-export function ClientTools({ expId, startOpen }: { expId: string; startOpen: boolean }) {
-  const [open, setOpen] = useState<"add" | "import" | null>(startOpen ? "add" : null);
+// Vay: confirma que a expedição aconteceu e libera os créditos no extrato do parceiro (não tem volta).
+export function FinishExpedition({ expId, expName, total, deals }: { expId: string; expName: string; total: string; deals: number }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [state, setState] = useState<FormState>(undefined);
+  const [pending, start] = useTransition();
+  const run = () =>
+    start(async () => {
+      const r = await finishExpedition(expId);
+      setState(r);
+      if (r?.ok) ref.current?.close();
+    });
   return (
-    <div className="stack">
-      <div className="row">
-        <button type="button" className={`btn ${open === "add" ? "secondary" : "outline"}`} aria-expanded={open === "add"} onClick={() => setOpen(open === "add" ? null : "add")}>
-          Cadastrar cliente
-        </button>
-        <button type="button" className={`btn ${open === "import" ? "secondary" : "outline"}`} aria-expanded={open === "import"} onClick={() => setOpen(open === "import" ? null : "import")}>
-          Importar planilha
-        </button>
-      </div>
-      {open === "add" ? <AddClientForm expId={expId} onClose={() => setOpen(null)} /> : null}
-      {open === "import" ? <ImportForm expId={expId} onClose={() => setOpen(null)} /> : null}
-    </div>
-  );
-}
-
-function AddClientForm({ expId, onClose }: { expId: string; onClose: () => void }) {
-  const [state, action, pending] = useActionState(addClient.bind(null, expId), undefined);
-  const ref = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (state?.ok) ref.current?.reset();
-  }, [state]);
-  return (
-    <section className="panel stack">
-      <div className="ttl">
-        <h2 className="section-title">Cadastrar cliente</h2>
-        <Tip>Cadastre cada viajante separadamente, mesmo quando viajam juntos.</Tip>
-      </div>
-      <form ref={ref} action={action} className="form">
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="nc-name">Nome</label>
-            <input id="nc-name" name="name" className="input" required />
-          </div>
-          <div className="field">
-            <label htmlFor="nc-email">E-mail</label>
-            <span className="small muted">Usado para encontrar o cliente na base da Vay Agora.</span>
-            <input id="nc-email" name="email" type="email" className="input" required />
-          </div>
-          <div className="field">
-            <label htmlFor="nc-phone">Telefone</label>
-            <input id="nc-phone" name="phone" type="tel" className="input" placeholder="(11) 99999-9999" />
-          </div>
-        </div>
-        <Feedback state={state} />
-        <div className="row">
-          <button type="submit" className="btn primary" disabled={pending}>Adicionar cliente</button>
-          <button type="button" className="btn ghost" onClick={onClose}>Fechar</button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
-function ImportForm({ expId, onClose }: { expId: string; onClose: () => void }) {
-  const [state, action, pending] = useActionState(importClients.bind(null, expId), undefined);
-  const [text, setText] = useState("");
-  const [fileNote, setFileNote] = useState("Nenhum arquivo selecionado");
-  const preview = parseRows(text);
-  useEffect(() => {
-    if (state?.ok) {
-      setText("");
-      setFileNote("Nenhum arquivo selecionado");
-    }
-  }, [state]);
-
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (/\.xlsx?$/i.test(f.name)) {
-      setFileNote("Arquivos .xlsx: salve como CSV ou cole as linhas abaixo.");
-      return;
-    }
-    const r = new FileReader();
-    r.onload = () => {
-      setText(String(r.result ?? ""));
-      setFileNote(f.name);
-    };
-    r.readAsText(f, "utf-8");
-  }
-
-  return (
-    <section className="panel stack">
-      <div className="ttl">
-        <h2 className="section-title">Importar clientes por planilha</h2>
-        <Tip>Envie um arquivo CSV ou cole as linhas copiadas do Excel ou Google Planilhas. Colunas: nome, e-mail, telefone. Cadastre cada viajante separadamente, mesmo quando viajam juntos: uma linha por pessoa.</Tip>
-      </div>
-      <form action={action} className="form">
-        <div className="row">
-          <label className="filebtn">
-            Escolher arquivo CSV
-            <input type="file" accept=".csv,.txt,.tsv,.xlsx,.xls" className="sr-only" onChange={onFile} />
-          </label>
-          <span className="small muted">{fileNote}</span>
-        </div>
-        <div className="field">
-          <label htmlFor="imp-text">Ou cole aqui</label>
-          <textarea id="imp-text" name="rows" className="textarea mono" value={text} onChange={(e) => setText(e.target.value)} placeholder={"nome;e-mail;telefone\nAna Ribeiro;ana@email.com;(11) 98123-4410"} />
-        </div>
-        {preview.length ? (
-          <div className="card" style={{ overflow: "hidden" }}>
-            <div className="card-head small muted" style={{ padding: "12px 16px" }}>
-              {preview.length} {preview.length === 1 ? "cliente encontrado" : "clientes encontrados"}
-              {preview.length > 5 ? " · mostrando os 5 primeiros" : ""}
-            </div>
-            <div className="table-wrap">
-              <table className="tbl">
-                <tbody>
-                  {preview.slice(0, 5).map((p, i) => (
-                    <tr key={i}><td className="strong">{p.name}</td><td>{p.email}</td><td>{p.phone}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
-        <Feedback state={state} />
-        <div className="row">
-          <button type="submit" className="btn primary" disabled={pending || preview.length === 0}>
-            {preview.length ? `Adicionar ${preview.length} ${preview.length === 1 ? "cliente" : "clientes"}` : "Adicionar clientes"}
-          </button>
-          <button type="button" className="btn ghost" onClick={onClose}>Fechar</button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
-// ---------- Vay: follow-up ----------
-
-export function NewDealForm({ afiliado, defaultCity, defaultDate }: { afiliado: string; defaultCity: string; defaultDate: string }) {
-  const [state, action, pending] = useActionState(createDeal.bind(null, afiliado), undefined);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (state?.ok) ref.current?.reset();
-  }, [state]);
-  if (!open)
-    return (
-      <button type="button" className="btn outline sm" onClick={() => setOpen(true)}>
-        Registrar negócio manualmente
+    <>
+      <button type="button" className="btn primary" onClick={() => ref.current?.showModal()}>
+        Finalizar expedição
       </button>
-    );
-  const cityOptions = CITIES.map((c) => <option key={c.name} value={c.name}>{c.label}</option>);
-  return (
-    <form ref={ref} action={action} className="panel form">
-      <div className="ttl">
-        <h3 className="section-title">Registrar negócio fechado</h3>
-        <Tip>Use enquanto a sincronização com o HubSpot não estiver ativa. O negócio é vinculado pelas mesmas regras de afiliado, data e destino.</Tip>
-      </div>
-      <div className="form-grid">
-        <div className="field"><label htmlFor="nd-name">Titular</label><input id="nd-name" name="contact_name" className="input" required /></div>
-        <div className="field"><label htmlFor="nd-email">E-mail do titular</label><input id="nd-email" name="email" type="email" className="input" /></div>
-        <div className="field"><label htmlFor="nd-phone">Telefone do titular</label><input id="nd-phone" name="phone" type="tel" className="input" /></div>
-        <div className="field"><label htmlFor="nd-closed">Fechado em</label><input id="nd-closed" name="closed_on" type="date" className="input" required /></div>
-      </div>
-      <div className="field">
-        <div className="ttl">
-          <label htmlFor="nd-others">Outros passageiros (opcional)</label>
-          <Tip>Um por linha: nome; e-mail; telefone. Valores e comissão são do negócio e contam uma vez só.</Tip>
+      {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
+      <dialog ref={ref} className="modal" aria-labelledby="fin-title" style={{ width: "min(480px, calc(100vw - 32px))" }}>
+        <div className="modal-head">
+          <h2 id="fin-title" className="section-title">Finalizar {expName}?</h2>
+          <button type="button" className="btn ghost sm" onClick={() => ref.current?.close()}>Fechar</button>
         </div>
-        <textarea id="nd-others" name="others" className="textarea mono" placeholder={"Gislaine Souza;gislaine@email.com;(11) 98888-7777"} />
-      </div>
-      <div className="form-grid">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="stack" style={{ gap: 8 }}>
-            <div className="field">
-              <label htmlFor={`nd-c${i}`}>Trecho {i + 1}{i ? " (opcional)" : ""}</label>
-              <select id={`nd-c${i}`} name={`leg_city_${i}`} className="select" defaultValue={i === 0 ? defaultCity : ""} required={i === 0}>
-                <option value="">—</option>
-                {cityOptions}
-              </select>
-            </div>
-            <input aria-label={`Data do trecho ${i + 1}`} name={`leg_date_${i}`} type="date" className="input" defaultValue={i === 0 ? defaultDate : ""} required={i === 0} />
+        <div className="stack" style={{ gap: 12 }}>
+          <p>
+            Confirme que a expedição aconteceu corretamente. Os créditos de <strong>{total}</strong> ({deals}{" "}
+            {deals === 1 ? "negócio" : "negócios"}) serão lançados no extrato do parceiro.
+          </p>
+          <p className="small muted">
+            Depois de finalizada, o valor fica congelado: mudanças no HubSpot não alteram mais os créditos desta expedição.
+          </p>
+          {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
+          <div className="row">
+            <button type="button" className="btn primary" disabled={pending} onClick={run}>
+              {pending ? "Finalizando…" : "Confirmar e lançar créditos"}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => ref.current?.close()}>Cancelar</button>
           </div>
-        ))}
-      </div>
-      <div className="form-grid">
-        <div className="field"><label htmlFor="nd-end">Volta em</label><input id="nd-end" name="end_date" type="date" className="input" required /></div>
-        <div className="field"><label htmlFor="nd-voo">Voo (R$)</label><input id="nd-voo" name="voo" inputMode="decimal" className="input" placeholder="0,00" /></div>
-        <div className="field"><label htmlFor="nd-hotel">Hospedagem (R$)</label><input id="nd-hotel" name="hotel" inputMode="decimal" className="input" placeholder="0,00" /></div>
-        <div className="field"><label htmlFor="nd-seg">Seguro (R$)</label><input id="nd-seg" name="seguro" inputMode="decimal" className="input" placeholder="0,00" /></div>
-      </div>
-      <Feedback state={state} />
-      <div className="row">
-        <button type="submit" className="btn primary" disabled={pending}>Registrar negócio</button>
-        <button type="button" className="btn ghost" onClick={() => setOpen(false)}>Fechar</button>
-      </div>
-    </form>
+        </div>
+      </dialog>
+    </>
   );
 }

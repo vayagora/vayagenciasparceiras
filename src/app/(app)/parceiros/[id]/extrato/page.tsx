@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { BalanceStatement } from "@/components/BalanceStatement";
-import { buildStatement } from "@/lib/balance";
+import { buildStatement, toRelease } from "@/lib/balance";
 import { loadWorld, requireVay } from "@/lib/data";
 
 export const metadata = { title: "Extrato do parceiro" };
@@ -20,7 +20,8 @@ export default async function PartnerExtratoPage({
   return (
     <BalanceStatement
       partner={partner}
-      statement={buildStatement(partner, world.ledger, world.entries)}
+      statement={buildStatement(partner, world.entries, world.exps)}
+      toRelease={toRelease(partner, world.ledger, world.exps).map((x) => ({ id: x.exp.id, name: x.exp.name, total: x.total }))}
       isVay
       basePath={`/parceiros/${id}/extrato`}
       filter={filter}

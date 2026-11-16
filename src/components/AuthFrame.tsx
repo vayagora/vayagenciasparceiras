@@ -8,7 +8,7 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
         <div className="stack" style={{ maxWidth: 460, gap: 18 }}>
           <div className="eyebrow" style={{ color: "rgba(255,255,255,.75)" }}>Portal de agências parceiras</div>
           <h1>Você viaja, a gente cuida dos detalhes.</h1>
-          <p>Inicie expedições, cadastre seus clientes e acompanhe seus ganhos.</p>
+          <p>Acompanhe suas expedições, seus clientes e seus ganhos.</p>
         </div>
         <div style={{ fontSize: 13, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.7)" }}>
           Hub Inteligente de Viagens

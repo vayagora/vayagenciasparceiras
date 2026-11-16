@@ -2,10 +2,12 @@
 
 Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócios da conta da Vay Agora (portal 44656712).
 
-## Quais negócios entram
+## Quais negócios entram (SPEC 2.0)
 
-- Etapa do funil em `HUBSPOT_WON_STAGES` (padrão `135525686` = "Emissão Realizada").
-- **Origem do Negócio** = "Afiliado" (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`).
+- **Qualquer etapa** do funil: em aberto (`HUBSPOT_OPEN_STAGES`), ganho (`HUBSPOT_WON_STAGES`, padrão `135525686` = "Emissão Realizada")
+  e perdido (`HUBSPOT_LOST_STAGES`, padrão `closedlost`). Só o ganho remunera; os outros dão a etapa do cliente.
+- **Origem do Negócio** = "Agência Parceira" ou "Afiliado" (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`, lista separada por vírgula;
+  ignora acentos e maiúsculas).
 - A **agência é a Empresa associada ao negócio**. O nome da empresa no HubSpot precisa ser igual ao nome
   (afiliado) do parceiro no sistema, ignorando acentos e maiúsculas (ex.: "JT Viajar e Correr").
   Se houver várias empresas associadas, vale a que é parceira. Empresa que não é parceira → o negócio entra
@@ -13,7 +15,7 @@ Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócio
 
 ## Negócios não sinalizados
 
-Como os consultores podem esquecer a marcação, a sincronização também busca **todos os negócios ganhos** com
+Como os consultores podem esquecer a marcação, a sincronização também busca **todos os negócios ganhos ou em aberto** com
 viagem perto das expedições (1º trecho aéreo, check-in ou início do seguro entre 30 dias antes da primeira
 expedição e 3 dias depois da última). Os que não estão sinalizados (origem ≠ Afiliado e/ou sem a empresa da
 agência) e combinam com alguma expedição por destino e data (mesma regra do vínculo) são guardados como
@@ -73,17 +75,14 @@ e da base OpenFlights). Aeroporto a até 60 km de uma cidade da lista de destino
 Limitação: no seguro e na hospedagem, o destino é texto livre. Se estiver escrito como país ("Tailândia"),
 não casa com a cidade da expedição.
 
-## Etapa do cliente e observação
+## Etapa do cliente e observação (SPEC 2.0)
 
-O acompanhamento do contato (status e responsável) é feito pela Vay **no sistema**. Do HubSpot vêm só:
+A lista de clientes de cada expedição são os passageiros dos negócios da agência que combinam com ela. A etapa vem da
+etapa do negócio: Pré Cotação / Realizar Cotação → Em contato; demais etapas em aberto → Em negociação; Emissão Realizada →
+Compra concluída; Negócio perdido → Não comprou. A observação é o campo **"Observações para parceiro"**
+(`observacoes_para_parceiro`, no **Negócio**; `HUBSPOT_PROP_OBS_PARCEIRO`), guardado em `deals.partner_note`.
 
-- **Em negociação / Compra concluída**: a cada sincronização, cada cliente cadastrado é ligado ao contato do HubSpot
-  (por e-mail; sem e-mail, por telefone em Telefone, Celular ou WhatsApp). Negócio **ganho** compatível com a expedição
-  (destino e data) em que o cliente é passageiro → "Compra concluída"; negócio **em aberto** (`HUBSPOT_OPEN_STAGES`) →
-  "Em negociação".
-- **Observação**: o campo **"Observações para parceiro"** (`observacoes_para_parceiro`, no **Negócio**;
-  `HUBSPOT_PROP_OBS_PARCEIRO`) dos negócios do cliente para a expedição. Enquanto o cliente não tem negócio, a observação
-  é escrita no sistema; depois, só no HubSpot (a do sistema fica travada e as duas aparecem).
+Negócio em aberto sem Serviço ou Valor entra com o roteiro (valor zero) para aparecer na lista.
 
 ## Detalhes no modal (voo, hospedagem, seguro)
 
@@ -97,7 +96,7 @@ Contatos associados ao negócio, com os rótulos de associação da conta:
 
 - **"Comprador"** (`HUBSPOT_BUYER_LABEL`): quem pagou. Também marca o titular (`HUBSPOT_TITULAR_LABEL`, padrão `Titular,Comprador`;
   entre vários, vale o que também é passageiro). Negócio com um contato só não precisa de rótulo.
-- **"Passageiro"** (`HUBSPOT_PASSENGER_LABEL`): quem viaja. Só eles entram na correspondência com os clientes do parceiro.
+- **"Passageiro"** (`HUBSPOT_PASSENGER_LABEL`): quem viaja. Só eles entram na lista de clientes da expedição.
   Sem nenhum rótulo de passageiro no negócio, todos os contatos contam como passageiros.
 
 ## App privado

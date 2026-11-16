@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { buildStatement } from "@/lib/balance";
+import { buildStatement, toRelease } from "@/lib/balance";
 import { addMoney, pct, RATES, ZERO } from "@/lib/commission";
 import type { World } from "@/lib/data";
 import { brl, lastClosedQuarter, plural, QLABEL, quarterOf, todayIso } from "@/lib/format";
@@ -35,12 +35,13 @@ export function EarningsBlock({
 
   const exps = world.exps.filter((e) => e.partner_id === partner.id);
   const expIds = new Set(exps.map((e) => e.id));
-  const periodDeals = ledger.paid.filter((r) => expIds.has(r.exp!.id) && inPeriod(r.deal.closed_on));
+  const periodDeals = ledger.paid.filter((r) => expIds.has(r.exp!.id) && inPeriod(r.deal.closed_on ?? ""));
   const sum = periodDeals.reduce((a, r) => addMoney(a, r.com), ZERO);
   const stats = exps.map((e) => ledger.expStats(e));
   const totalClients = stats.reduce((a, t) => a + t.n, 0);
   const totalClosed = stats.reduce((a, t) => a + t.closed, 0);
-  const st = buildStatement(partner, ledger, world.entries);
+  const st = buildStatement(partner, world.entries, world.exps);
+  const pendingRelease = toRelease(partner, ledger, world.exps).reduce((a, x) => a + x.total, 0);
 
   const periodShort = pQ === "all" ? `Ano de ${pYear}` : `${pQ}º tri/${pYear}`;
   const periodLabel = pQ === "all" ? `Ano de ${pYear} · jan–dez` : `${QLABEL[Number(pQ)]} de ${pYear}`;
@@ -49,7 +50,7 @@ export function EarningsBlock({
   let periodHint = isDefault ? "Último trimestre concluído (horário de Brasília)" : "Pela data de fechamento do negócio no HubSpot";
   if (pYear === now.y && (pQ === "all" || Number(pQ) === now.q)) periodHint = "Período em andamento — valores parciais";
   const years = new Set<number>([now.y, lq.y]);
-  world.deals.forEach((d) => years.add(quarterOf(d.closed_on).y));
+  world.deals.forEach((d) => d.closed_on && years.add(quarterOf(d.closed_on).y));
 
   const rates = [
     { pct: pct(RATES.voo), label: "Voo", value: sum.voo, bg: "var(--blue-50)", fg: "var(--blue-700)" },
@@ -72,7 +73,7 @@ export function EarningsBlock({
         <div className="earn-bal">
           <span className="l">Saldo atual</span>
           <span className="v">{brl(st.balance)}</span>
-          <span className="s">Entradas {brl(st.totalIn)} · Saídas {brl(st.totalOut)}</span>
+          <span className="s">A liberar {brl(pendingRelease)} · entra quando a expedição é finalizada</span>
           <Link href={isVay ? `/parceiros/${partner.id}/extrato` : "/extrato"}>Ver extrato</Link>
         </div>
         <div className="earn-stats">
@@ -87,7 +88,7 @@ export function EarningsBlock({
             <span className="s">No período</span>
           </div>
           <div className="estat">
-            <span className="l">Clientes cadastrados</span>
+            <span className="l">Clientes</span>
             <span className="v">{totalClients}</span>
             <span className="s hl">{plural(totalClosed, "compra concluída", "compras concluídas")}</span>
           </div>

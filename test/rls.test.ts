@@ -53,7 +53,7 @@ const ID = {
   dealB: "40000000-0000-0000-0000-00000000000b",
 };
 
-describe.skipIf(!url)("RLS · passageiros do negócio", () => {
+describe.skipIf(!url)("RLS · regras de acesso", () => {
   let db: Client;
 
   // Executa como um usuário logado (RLS ativo) e volta ao superusuário.
@@ -73,6 +73,16 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query("savepoint deny");
     await expect(db.query(q, p)).rejects.toThrow(/row-level security/);
     await db.query("rollback to savepoint deny");
+  }
+
+  // Comando que deve falhar (fora de transação), sem deixar efeito.
+  async function fails(q: string, p: unknown[], re: RegExp) {
+    await db.query("begin");
+    try {
+      await expect(db.query(q, p)).rejects.toThrow(re);
+    } finally {
+      await db.query("rollback");
+    }
   }
 
   beforeAll(async () => {
@@ -137,6 +147,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(sql("0012_conferencia.sql"));
+    await db.query(sql("0013_somente_leitura.sql"));
     await db.query(GRANTS);
   });
 
@@ -161,31 +172,55 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     ]);
   });
 
-  it("parceiro não lê nome, e-mail nem telefone de passageiros que não cadastrou", async () => {
-    const ps = await as(ID.pa, () => rows(`select deal_id, name, email, phone from deal_passengers order by name`));
-    // Ana (negócio antigo, cadastrada) e Gislaine; o Emerson não aparece.
-    expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Gislaine Souza"]);
-    expect(JSON.stringify(ps)).not.toContain("emerson");
-    expect(JSON.stringify(ps)).not.toContain("98888-1111");
+  it("0013: parceiro lê todos os passageiros dos negócios da própria agência (não há mais lista cadastrada)", async () => {
+    const ps = await as(ID.pa, () => rows(`select name from deal_passengers order by name`));
+    expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Emerson Souza", "Gislaine Souza"]);
   });
 
-  it("parceiro vê a contagem de passageiros do próprio negócio, sem identidade", async () => {
-    const d = await as(ID.pa, () => rows(`select hubspot_id, passenger_count from deals where id = $1`, [ID.dealA]));
-    expect(d).toEqual([{ hubspot_id: "4512", passenger_count: 2 }]);
-  });
-
-  it("parceiro A não lê nada do parceiro B (negócios, passageiros, clientes, expedições)", async () => {
+  it("parceiro A não lê nada do parceiro B (negócios, passageiros, expedições)", async () => {
     await as(ID.pa, async () => {
       expect(await rows(`select id from deals where id = $1`, [ID.dealB])).toEqual([]);
       expect(await rows(`select id from deal_passengers where deal_id = $1`, [ID.dealB])).toEqual([]);
-      expect(await rows(`select id from clients where expedition_id = $1`, [ID.expB])).toEqual([]);
       expect(await rows(`select id from expeditions where id = $1`, [ID.expB])).toEqual([]);
+    });
+    expect(await as(ID.pb, () => rows(`select name from deal_passengers`))).toEqual([{ name: "Bia Lopes" }]);
+  });
+
+  it("0013: lista de clientes e comentários do sistema foram apagados", async () => {
+    expect(await rows(`select to_regclass('public.clients') as a, to_regclass('public.client_comments') as b`)).toEqual([{ a: null, b: null }]);
+  });
+
+  it("0013: negócio em aberto (sem data de fechamento) e etapa do HubSpot", async () => {
+    const [d] = await rows(
+      `insert into deals (hubspot_id, afiliado, closed_on, hs_stage, stage_kind, partner_note, legs, end_date)
+       values ('9200', 'Horizonte Eventos', null, 'presentationscheduled', 'open', 'Cotando', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19') returning id`,
+    );
+    await fails(`update deals set stage_kind = 'outro' where id = $1`, [d.id], /check/);
+    expect(await as(ID.pa, () => rows(`select partner_note from deals where id = $1`, [d.id]))).toEqual([{ partner_note: "Cotando" }]);
+    await db.query(`delete from deals where id = $1`, [d.id]);
+  });
+
+  it("0013: só a Vay cria, altera e finaliza expedições", async () => {
+    await as(ID.pa, async () => {
+      await denied(`insert into expeditions (partner_id, name, city, start_date, days) values ($1, 'Minha', 'Lisboa', '2027-01-01', 3)`, [ID.partnerA]);
+      await expect(db.query(`update expeditions set name = 'x', finished_at = now() where id = $1`, [ID.expA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+    await as(ID.vay, async () => {
+      await db.query(`update expeditions set finished_at = now(), finished_by_name = 'Gabriel' where id = $1`, [ID.expA]);
+      expect(await rows(`select finished_by_name from expeditions where id = $1`, [ID.expA])).toEqual([{ finished_by_name: "Gabriel" }]);
     });
   });
 
-  it("correspondência por telefone normalizado quando não há e-mail", async () => {
-    const ps = await as(ID.pb, () => rows(`select name from deal_passengers`));
-    expect(ps).toEqual([{ name: "Bia Lopes" }]);
+  it("0013: fechamento lança um único crédito por expedição; parceiro vê só o próprio", async () => {
+    await db.query(`insert into balance_entries (partner_id, expedition_id, kind, amount, title) values ($1, $2, 'in', 420, 'Créditos da expedição Congresso')`, [ID.partnerA, ID.expA]);
+    await fails(
+      `insert into balance_entries (partner_id, expedition_id, kind, amount, title) values ($1, $2, 'in', 1, 'De novo')`,
+      [ID.partnerA, ID.expA],
+      /balance_entries_expedition_key/,
+    );
+    expect(await as(ID.pb, () => rows(`select id from balance_entries where expedition_id = $1`, [ID.expA]))).toEqual([]);
+    await fails(`delete from expeditions where id = $1`, [ID.expA], /foreign key/);
+    await db.query(`delete from balance_entries where expedition_id = $1`, [ID.expA]);
   });
 
   it("parceiro não grava passageiros nem lê o histórico de sincronização", async () => {
@@ -220,25 +255,6 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
   it("equipe Vay lê todos os passageiros", async () => {
     const ps = await as(ID.vay, () => rows(`select name from deal_passengers order by name`));
     expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Bia Lopes", "Emerson Souza", "Gislaine Souza"]);
-  });
-
-  it("0004 converte as etapas antigas na marcação manual", async () => {
-    const r = await rows(`select name, stage from clients where name like 'Cliente %' order by name`);
-    expect(r).toEqual([
-      { name: "Cliente Outro Canal", stage: "outro_lugar" },
-      { name: "Cliente Proposta", stage: "auto" },
-      { name: "Cliente Sem Contato", stage: "nao_contactar" },
-    ]);
-  });
-
-  it("parceiro só cadastra cliente com etapa automática e sem dados do HubSpot", async () => {
-    await as(ID.pa, async () => {
-      await db.query(`insert into clients (expedition_id, name, email) values ($1, 'Novo', 'novo@x.com')`, [ID.expA]);
-      await denied(`insert into clients (expedition_id, name, email, stage) values ($1, 'X', 'x@x.com', 'nao_contactar')`, [ID.expA]);
-      await denied(`insert into clients (expedition_id, name, email, owner_name) values ($1, 'Y', 'y@x.com', 'Eu mesmo')`, [ID.expA]);
-      await denied(`insert into clients (expedition_id, name, email, partner_note) values ($1, 'Z', 'z@x.com', 'nota')`, [ID.expA]);
-      await expect(db.query(`update clients set stage = 'outro_lugar' where expedition_id = $1`, [ID.expA])).resolves.toMatchObject({ rowCount: 0 });
-    });
   });
 
   it("saldo: parceiro lê só os próprios lançamentos e não lança nada", async () => {
@@ -303,69 +319,6 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     expect(await as(ID.vay, () => rows(`select flags from deal_reviews`))).toEqual([{ flags: ["fora", "acompanhante"] }]);
   });
 
-  it("0009 converte observação em comentário público e nota interna em comentário interno (e esvazia a nota)", async () => {
-    const r = await rows(
-      `select c.name, k.body, k.internal, k.author_name, k.created_at::date::text as d from client_comments k join clients c on c.id = k.client_id where c.name in ('Bia Lopes', 'Gislaine Souza') order by c.name`,
-    );
-    expect(r).toEqual([
-      { name: "Bia Lopes", body: "Nota interna da Bia", internal: true, author_name: "Vay Agora", d: expect.any(String) },
-      { name: "Gislaine Souza", body: "Prefere janela", internal: false, author_name: "Vay Agora", d: "2026-10-01" },
-    ]);
-    expect(await rows(`select count(*)::int as n from clients where note <> ''`)).toEqual([{ n: 0 }]);
-  });
-
-  it("comentários: parceiro lê só os públicos dos próprios clientes; não insere; ninguém altera", async () => {
-    const [gis] = await rows(`select id from clients where name = 'Gislaine Souza'`);
-    const [bia] = await rows(`select id from clients where name = 'Bia Lopes'`);
-    await db.query(
-      `insert into client_comments (client_id, body, internal, author_name, author_email) values
-        ($1, 'Interno da Gislaine', true, 'Ana', 'ana@vayagora.com.br'),
-        ($2, 'Público da Bia', false, 'Ana', 'ana@vayagora.com.br')`,
-      [gis.id, bia.id],
-    );
-    await as(ID.pa, async () => {
-      // parceiro A: só o público da própria cliente (nada interno, nada do parceiro B)
-      expect((await rows(`select body from client_comments order by body`)).map((x) => x.body)).toEqual(["Prefere janela"]);
-      await denied(`insert into client_comments (client_id, body, author_name, author_email) values ($1, 'x', 'x', 'x')`, [gis.id]);
-      await expect(db.query(`update client_comments set body = 'mudou'`)).resolves.toMatchObject({ rowCount: 0 });
-      await expect(db.query(`delete from client_comments`)).resolves.toMatchObject({ rowCount: 0 });
-    });
-    await as(ID.pb, async () => {
-      expect((await rows(`select body from client_comments`)).map((x) => x.body)).toEqual(["Público da Bia"]);
-    });
-    await as(ID.vay, async () => {
-      // os 2 inseridos aqui + os 4 convertidos pela 0009 (inclui notas antigas de outros clientes de teste)
-      expect(await rows(`select id from client_comments`)).toHaveLength(6);
-      await db.query(`insert into client_comments (client_id, body, internal, author_name, author_email) values ($1, 'Da Vay', true, 'V', 'v@x')`, [gis.id]);
-      await expect(db.query(`update client_comments set body = 'mudou'`)).resolves.toMatchObject({ rowCount: 0 });
-      await expect(db.query(`delete from client_comments`)).resolves.toMatchObject({ rowCount: 0 });
-    });
-  });
-
-  it("0010: parceiro vê o passageiro do próprio negócio pelo nome completo (sem acento/maiúscula), não só pelo primeiro nome", async () => {
-    const [eli] = await rows(`insert into clients (expedition_id, name, phone) values ($1, 'Eliandro Vilela Coutinho', '(24) 99945-8601') returning id`, [ID.expA]);
-    const [d] = await rows(
-      `insert into deals (hubspot_id, afiliado, closed_on, legs, end_date, voo) values ('9001', 'Horizonte Eventos', '2026-10-09', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19', 9395) returning id`,
-    );
-    await db.query(
-      `insert into deal_passengers (deal_id, hubspot_contact_id, name, email, phone, is_titular, position) values
-        ($1, '253680480796', 'ELIANDRO  vilela coutinho', 'eliandroadvogado@gmail.com', '+5524981245178', true, 0),
-        ($1, '999', 'Gislaine', 'outra@x.com', '', false, 1)`,
-      [d.id],
-    );
-    await as(ID.pa, async () => {
-      const names = (await rows(`select name from deal_passengers where deal_id = $1 order by position`, [d.id])).map((x) => x.name);
-      // pelo nome completo: sim; "Gislaine" sozinha (só o primeiro nome, outro e-mail): não
-      expect(names).toEqual(["ELIANDRO  vilela coutinho"]);
-    });
-    await as(ID.pb, async () => {
-      expect(await rows(`select id from deal_passengers where deal_id = $1`, [d.id])).toEqual([]);
-    });
-    expect(await rows(`select names_match('José da Silva', 'jose  DA silva') as a, names_match('Ana', 'Ana') as b`)).toEqual([{ a: true, b: false }]);
-    await db.query(`delete from deals where id = $1`, [d.id]);
-    await db.query(`delete from clients where id = $1`, [eli.id]);
-  });
-
   it("0011: nome ignora de/da/do; comprador que não viaja não conta como passageiro", async () => {
     expect(
       await rows(
@@ -398,9 +351,11 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(sql("0012_conferencia.sql"));
+    await db.query(sql("0013_somente_leitura.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);
+    expect(await rows(`select stage_kind from deals where hubspot_id in ('4514', '4515') order by hubspot_id`)).toEqual([{ stage_kind: "open" }, { stage_kind: "lost" }]);
   });
 
   it("permite no máximo um titular por negócio", async () => {
