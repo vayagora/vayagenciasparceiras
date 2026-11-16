@@ -134,6 +134,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
       update clients set note = 'Nota interna da Bia' where name = 'Bia Lopes';
     `);
     await db.query(sql("0009_comentarios.sql"));
+    await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(GRANTS);
   });
 
@@ -329,6 +330,30 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     });
   });
 
+  it("0010: parceiro vê o passageiro do próprio negócio pelo nome completo (sem acento/maiúscula), não só pelo primeiro nome", async () => {
+    const [eli] = await rows(`insert into clients (expedition_id, name, phone) values ($1, 'Eliandro Vilela Coutinho', '(24) 99945-8601') returning id`, [ID.expA]);
+    const [d] = await rows(
+      `insert into deals (hubspot_id, afiliado, closed_on, legs, end_date, voo) values ('9001', 'Horizonte Eventos', '2026-10-09', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19', 9395) returning id`,
+    );
+    await db.query(
+      `insert into deal_passengers (deal_id, hubspot_contact_id, name, email, phone, is_titular, position) values
+        ($1, '253680480796', 'ELIANDRO  vilela coutinho', 'eliandroadvogado@gmail.com', '+5524981245178', true, 0),
+        ($1, '999', 'Gislaine', 'outra@x.com', '', false, 1)`,
+      [d.id],
+    );
+    await as(ID.pa, async () => {
+      const names = (await rows(`select name from deal_passengers where deal_id = $1 order by position`, [d.id])).map((x) => x.name);
+      // pelo nome completo: sim; "Gislaine" sozinha (só o primeiro nome, outro e-mail): não
+      expect(names).toEqual(["ELIANDRO  vilela coutinho"]);
+    });
+    await as(ID.pb, async () => {
+      expect(await rows(`select id from deal_passengers where deal_id = $1`, [d.id])).toEqual([]);
+    });
+    expect(await rows(`select names_match('José da Silva', 'jose  DA silva') as a, names_match('Ana', 'Ana') as b`)).toEqual([{ a: true, b: false }]);
+    await db.query(`delete from deals where id = $1`, [d.id]);
+    await db.query(`delete from clients where id = $1`, [eli.id]);
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
@@ -339,6 +364,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0007_pagamento_cashback.sql"));
     await db.query(sql("0008_contato_manual.sql"));
     await db.query(sql("0009_comentarios.sql"));
+    await db.query(sql("0010_vinculo_por_nome.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

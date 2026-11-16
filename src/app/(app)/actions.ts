@@ -160,6 +160,46 @@ export async function setClientOwner(clientId: string, ownerId: string | null): 
   return { ok: "Responsável salvo." };
 }
 
+// Vincula um passageiro de um negócio do HubSpot a um cliente da lista (quando contato, e-mail, telefone e nome
+// não bateram). Grava no cliente o contato do HubSpot (ou, sem ele, o e-mail/telefone do passageiro) e deixa
+// um comentário interno registrando o vínculo.
+export async function linkPassengerToClient(passengerId: string, clientId: string): Promise<FormState> {
+  const s = await requireVay();
+  const supabase = await createClient();
+  const [{ data: p }, { data: c }] = await Promise.all([
+    supabase.from("deal_passengers").select("name, email, phone, hubspot_contact_id, deal_id").eq("id", passengerId).single(),
+    supabase.from("clients").select("id, name, email, phone, expedition_id").eq("id", clientId).single(),
+  ]);
+  if (!p || !c) return { error: "Passageiro ou cliente não encontrado." };
+  const [{ data: d }, { data: e }] = await Promise.all([
+    supabase.from("deals").select("hubspot_id, seq, afiliado").eq("id", p.deal_id).single(),
+    supabase.from("expeditions").select("partner_id, partners(afiliado)").eq("id", c.expedition_id).single(),
+  ]);
+  const partnerAfiliado = (e?.partners as unknown as { afiliado: string } | null)?.afiliado;
+  if (!d || !partnerAfiliado || d.afiliado !== partnerAfiliado) return { error: "O negócio não é deste parceiro." };
+
+  const patch: Record<string, string> = {};
+  if (p.hubspot_contact_id) patch.hubspot_contact_id = p.hubspot_contact_id;
+  else if (p.email) patch.email = p.email;
+  else if (p.phone) patch.phone = p.phone;
+  else return { error: "O passageiro não tem contato, e-mail nem telefone para vincular." };
+  if (p.email && !c.email) patch.email = p.email;
+  const { error } = await supabase.from("clients").update(patch).eq("id", clientId);
+  if (error) return { error: "Não foi possível vincular." };
+
+  const no = `#${d.hubspot_id ?? d.seq}`;
+  await supabase.from("client_comments").insert({
+    client_id: clientId,
+    body: `Vinculado manualmente ao passageiro “${p.name}” do negócio ${no}` + (p.hubspot_contact_id ? ` (contato ${p.hubspot_contact_id} no HubSpot).` : "."),
+    internal: true,
+    author_id: s.profile.id,
+    author_name: s.profile.full_name || s.profile.email,
+    author_email: s.profile.email,
+  });
+  revalidatePath("/", "layout");
+  return { ok: `${p.name} vinculado a ${c.name}.` };
+}
+
 // Comentário sobre o cliente (protótipo v37). Só a Vay; o autor vem da sessão, não do formulário.
 export async function addClientComment(clientId: string, body: string, internal: boolean): Promise<FormState> {
   const s = await requireVay();

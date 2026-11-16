@@ -97,6 +97,7 @@ export default async function ExpeditionPage({
           tag: { label: "Não cadastrado pelo parceiro", tone: "neutral" },
           stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
           owner: noOwner,
+          link: { passengers: [{ id: p.id, name: p.name }] },
           dealNos: [dealNo(r.deal)],
           prods: prods([], [r], true),
           com: null,
@@ -115,6 +116,7 @@ export default async function ExpeditionPage({
         warn: true,
         people: ps.map((p) => ({ name: p.name, suffix: p.is_titular && ps.length > 1 ? " · titular" : undefined, contact: p.email })),
         tag: { label: "Fora da lista do parceiro", tone: "yellow" },
+        link: { passengers: ps.map((p) => ({ id: p.id, name: p.name })) },
         stage: { id: "fechado", label: fechado.label, tone: fechado.tone, editable: false, manual: "auto" },
         owner: noOwner,
         dealNos: [dealNo(r.deal)],
@@ -201,6 +203,7 @@ export default async function ExpeditionPage({
           expName={exp.name}
           emptyText={isVay ? "O parceiro ainda não cadastrou clientes nesta expedição." : "Nenhum cliente cadastrado. Use “Cadastrar cliente” ou “Importar planilha”."}
           initialClient={sp.cliente}
+          linkClients={t.clients.map((c) => ({ value: c.id, label: c.name })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))}
         />
         {!isVay && outside.length ? (
           <p className="small muted" style={{ padding: "12px 18px", borderTop: "1px solid var(--border-subtle)" }}>

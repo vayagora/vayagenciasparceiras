@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Tone } from "@/lib/commission";
 import type { ClientComment, ManualStage, StageId } from "@/lib/types";
 import { buildXlsx, slug, type Cell } from "@/lib/xlsx";
-import { addClientComment, setClientOwner, setClientStage } from "../../actions";
+import { addClientComment, linkPassengerToClient, setClientOwner, setClientStage } from "../../actions";
 import { ProductCell, type ProductDeal } from "./ProductCell";
 
 type Product = "voo" | "hotel" | "seguro";
@@ -27,6 +27,8 @@ export type TableRow = {
   comments: ClientComment[]; // os que este usuário pode ver (o parceiro só recebe os públicos)
   email: string;
   phone: string;
+  // Vay: passageiros de negócio do HubSpot que não foram ligados a um cliente da lista (botão "Vincular")
+  link?: { passengers: { id: string; name: string }[] };
 };
 
 export type Option = { value: string; label: string };
@@ -57,6 +59,7 @@ export function ClientsTable({
   expName,
   emptyText,
   initialClient,
+  linkClients = [],
 }: {
   rows: TableRow[];
   isVay: boolean;
@@ -67,6 +70,7 @@ export function ClientsTable({
   expName: string;
   emptyText: string;
   initialClient?: string;
+  linkClients?: Option[]; // clientes da expedição, para o "Vincular"
 }) {
   const [q, setQ] = useState("");
   const [fStage, setFStage] = useState("");
@@ -100,6 +104,8 @@ export function ClientsTable({
 
   const filtered = !!(q.trim() || fStage || fOwner);
   const open = rows.find((r) => r.clientId === openId) ?? null;
+  const [linkKey, setLinkKey] = useState<string | null>(null);
+  const linking = rows.find((r) => r.key === linkKey) ?? null;
 
   // Rolagem horizontal também no topo, sincronizada com a de baixo
   const topRef = useRef<HTMLDivElement>(null);
@@ -217,7 +223,7 @@ export function ClientsTable({
           </thead>
           <tbody>
             {shown.map((r) => (
-              <Row key={r.key} r={r} isVay={isVay} manualStageOptions={manualStageOptions} vayUsers={vayUsers} onOpen={setOpenId} />
+              <Row key={r.key} r={r} isVay={isVay} manualStageOptions={manualStageOptions} vayUsers={vayUsers} onOpen={setOpenId} onLink={setLinkKey} />
             ))}
             {shown.length === 0 ? (
               <tr>
@@ -229,6 +235,7 @@ export function ClientsTable({
       </div>
 
       {open ? <CommentsModal row={open} isVay={isVay} onClose={() => setOpenId(null)} /> : null}
+      {isVay && linking?.link ? <LinkDialog row={linking} clients={linkClients} onClose={() => setLinkKey(null)} /> : null}
     </>
   );
 }
@@ -239,12 +246,14 @@ function Row({
   manualStageOptions,
   vayUsers,
   onOpen,
+  onLink,
 }: {
   r: TableRow;
   isVay: boolean;
   manualStageOptions: Option[];
   vayUsers: Option[];
   onOpen: (id: string) => void;
+  onLink: (key: string) => void;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
@@ -328,6 +337,10 @@ function Row({
         <td>
           {r.clientId ? (
             <button type="button" className="iconbtn" aria-label={`Comentários de ${r.people[0]?.name}`} title="Comentários" onClick={() => onOpen(r.clientId!)}>+</button>
+          ) : r.link?.passengers.length ? (
+            <button type="button" className="btn outline sm" title="Ligar este passageiro a um cliente da lista" onClick={() => onLink(r.key)}>
+              Vincular
+            </button>
           ) : null}
         </td>
       ) : null}
@@ -420,6 +433,65 @@ function CommentsModal({ row, isVay, onClose }: { row: TableRow; isVay: boolean;
             </div>
           </>
         ) : null}
+      </div>
+    </dialog>
+  );
+}
+
+// Vay: escolhe o cliente da lista que é este passageiro do HubSpot. O sistema grava no cliente o contato do
+// HubSpot e, na próxima atualização da tela, as duas linhas viram uma.
+function LinkDialog({ row, clients, onClose }: { row: TableRow; clients: Option[]; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const ps = row.link?.passengers ?? [];
+  const [pid, setPid] = useState(ps[0]?.id ?? "");
+  const [cid, setCid] = useState("");
+  const [msg, setMsg] = useState<{ error?: string; ok?: string }>({});
+  const [pending, start] = useTransition();
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  const save = () =>
+    start(async () => {
+      const r = (await linkPassengerToClient(pid, cid)) ?? {};
+      setMsg(r);
+      if (r.ok) ref.current?.close();
+    });
+  return (
+    <dialog ref={ref} className="modal" aria-labelledby="lk-title" onClose={onClose} style={{ width: "min(480px, calc(100vw - 32px))" }}>
+      <div className="modal-head">
+        <h2 id="lk-title" className="section-title">Vincular a um cliente</h2>
+        <button type="button" className="btn ghost sm" onClick={() => ref.current?.close()}>Fechar</button>
+      </div>
+      <div className="stack" style={{ gap: 12 }}>
+        <p className="small muted">
+          Use quando o passageiro do HubSpot é um cliente da lista, mas o sistema não reconheceu (contato, e-mail, telefone e nome
+          diferentes). O contato do HubSpot fica gravado no cliente e o vínculo fica registrado nos comentários internos.
+        </p>
+        {ps.length > 1 ? (
+          <div className="field">
+            <label htmlFor="lk-p">Passageiro do HubSpot</label>
+            <select id="lk-p" className="select" value={pid} onChange={(e) => setPid(e.target.value)}>
+              {ps.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        ) : (
+          <p className="small">Passageiro do HubSpot: <strong>{ps[0]?.name}</strong></p>
+        )}
+        <div className="field">
+          <label htmlFor="lk-c">Cliente da lista</label>
+          <select id="lk-c" className="select" value={cid} onChange={(e) => setCid(e.target.value)}>
+            <option value="">Escolha o cliente</option>
+            {clients.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+        {msg.error ? <div className="error" role="alert">{msg.error}</div> : null}
+        <div className="row">
+          <button type="button" className="btn primary" disabled={pending || !pid || !cid} onClick={save}>
+            {pending ? "Vinculando…" : "Vincular"}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => ref.current?.close()}>Cancelar</button>
+        </div>
       </div>
     </dialog>
   );

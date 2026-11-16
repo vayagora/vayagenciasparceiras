@@ -97,13 +97,13 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedi
 
 export type FlagKey =
   | "aprox" | "multi" | "nenhuma" | "fora" | "acompanhante" | "titular" | "nao_sinalizado"
-  | "credito" | "misto" | "ajustado";
+  | "credito" | "misto" | "ajustado" | "nome";
 export type Flag = { key: FlagKey; label: string; tone: Tone };
 
 // Sinalizações informativas não geram pendência de conferência.
 const INFORMATIVE: FlagKey[] = ["credito", "ajustado"];
 
-export type Registered = { passenger: Passenger; client: Client };
+export type Registered = { passenger: Passenger; client: Client; byName?: boolean };
 
 export type Resolved = {
   deal: Deal;
@@ -136,8 +136,8 @@ export type Resolved = {
 const foldName = (s: string) =>
   s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
-// Indício mais fraco que samePerson, usado só para negócios não sinalizados: mesmo nome completo
-// (pelo menos nome e sobrenome; só o primeiro nome não basta).
+// Indício mais fraco que samePerson: mesmo nome completo, sem diferenciar acentos, maiúsculas e espaços
+// (pelo menos nome e sobrenome; só o primeiro nome não basta). Espelha names_match() da migração 0010.
 export function sameName(a: string, b: string): boolean {
   const x = foldName(a);
   return x.includes(" ") && x === foldName(b);
@@ -159,14 +159,28 @@ export function sortPassengers(ps: Passenger[]): Passenger[] {
 }
 
 // Liga os passageiros do negócio aos clientes da lista de uma expedição.
+// 1º contato do HubSpot, e-mail ou telefone (samePerson); 2º, para quem sobrou, o nome completo idêntico
+// (byName = true: vai para conferência como "Vinculado pelo nome"). Mesma regra de passenger_visible_to_partner (0010).
 export function linkPassengers(deal: Deal, expClients: Client[]) {
   const registered: Registered[] = [];
   const unregistered: Passenger[] = [];
+  const used = new Set<string>();
+  const pending: Passenger[] = [];
   for (const p of sortPassengers(deal.passengers ?? [])) {
     const c = expClients.find((x) => samePerson(x, p));
-    if (c) registered.push({ passenger: p, client: c });
-    else unregistered.push(p);
+    if (c) {
+      registered.push({ passenger: p, client: c });
+      used.add(c.id);
+    } else pending.push(p);
   }
+  for (const p of pending) {
+    const c = expClients.find((x) => !used.has(x.id) && sameName(x.name, p.name));
+    if (c) {
+      registered.push({ passenger: p, client: c, byName: true });
+      used.add(c.id);
+    } else unregistered.push(p);
+  }
+  registered.sort((a, b) => Number(b.passenger.is_titular) - Number(a.passenger.is_titular) || a.passenger.position - b.passenger.position);
   const total = Math.max(Number(deal.passenger_count) || 0, deal.passengers?.length ?? 0);
   const titular = registered.find((r) => r.passenger.is_titular);
   const first = [...registered].sort((a, b) => (a.client.created_at < b.client.created_at ? -1 : 1))[0];
@@ -296,6 +310,9 @@ export function resolveDeals(
       else if (r.unregisteredCount > 0)
         // SPEC 1.3: acompanhante que não está na expedição deveria estar em outro negócio.
         r.flags.push({ key: "acompanhante", label: "Acompanhante fora da expedição", tone: "yellow" });
+      // Ligado ao cliente só pelo nome (contato, e-mail e telefone não bateram): conferir.
+      if (r.registered.some((x) => x.byName))
+        r.flags.push({ key: "nome", label: "Vinculado pelo nome", tone: "yellow" });
       const c = cashback(d);
       r.com = c.com;
       r.flags.push(...c.flags);

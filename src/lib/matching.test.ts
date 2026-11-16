@@ -458,6 +458,47 @@ describe("cliente recorrente (SPEC 1.3)", () => {
   });
 });
 
+describe("reconhecimento pelo nome completo", () => {
+  // Caso real: cliente da planilha sem e-mail e com outro telefone; no HubSpot, e-mail e telefone diferentes.
+  const eliandro = { ...client("Eliandro", "2026-10-01"), name: "Eliandro Vilela Coutinho", email: "", phone: "(24) 99945-8601" };
+  const pEli = () => pax("Eliandro", { name: "ELIANDRO  Vilela Coutinho", email: "eliandroadvogado@gmail.com", phone: "+5524981245178", hubspot_contact_id: "253680480796", is_titular: true });
+
+  it("liga pelo nome quando contato, e-mail e telefone não batem; sinaliza para conferência", () => {
+    const l = new Ledger([deal({ passengers: [pEli()] })], [partner], [madrid], [eliandro]);
+    const r = l.resolved[0];
+    expect(flagKeys(r)).toEqual(["nome"]);
+    expect(r.needsReview).toBe(true);
+    expect(r.registered.map((x) => [x.client.id, x.byName])).toEqual([[eliandro.id, true]]);
+    expect(l.clientLine(eliandro).stage).toBe("fechado");
+    expect(l.clientLine(eliandro).com.total).toBeCloseTo(450);
+  });
+
+  it("conferido pela Vay deixa de ser pendência", () => {
+    const l = new Ledger([deal({ passengers: [pEli()], reviewed: true })], [partner], [madrid], [eliandro]);
+    expect(l.pendingFor(madrid)).toBe(0);
+  });
+
+  it("só o primeiro nome não basta", () => {
+    const ana2 = { ...client("Ana", "2026-10-01"), email: "" };
+    const r = resolveDeals([deal({ passengers: [pax("Ana", { email: "x@y.com", is_titular: true })] })], [partner], [madrid], [ana2])[0];
+    expect(flagKeys(r)).toEqual(["fora"]);
+  });
+
+  it("contato/e-mail/telefone têm prioridade; o nome não liga um cliente que já foi ligado a outro passageiro", () => {
+    const anaR = { ...client("Ana", "2026-10-01"), name: "Ana Ribeiro" };
+    const d = deal({
+      passengers: [
+        pax("Ana", { name: "Ana Ribeiro", email: "ana@email.com", is_titular: true }), // casa pelo e-mail
+        pax("Ana", { name: "Ana Ribeiro", email: "homonima@x.com" }), // homônima: não reaproveita a mesma cliente
+      ],
+    });
+    const r = resolveDeals([d], [partner], [madrid], [anaR])[0];
+    expect(r.registered).toHaveLength(1);
+    expect(r.registered[0].byName).toBeUndefined();
+    expect(flagKeys(r)).toEqual(["acompanhante"]);
+  });
+});
+
 describe("correspondência cliente ↔ passageiro", () => {
   it("ID do HubSpot prevalece sobre e-mail", () => {
     expect(samePerson({ hubspot_contact_id: "1", email: "a@x.com" }, { hubspot_contact_id: "2", email: "a@x.com" })).toBe(false);

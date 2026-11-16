@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.5 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.6 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.6:** passageiro e cliente também se reconhecem pelo nome completo (com sinalização "Vinculado pelo nome"), e a Vay pode vincular manualmente um passageiro a um cliente da lista. Afeta §3 e §4.4.
 
 **Mudanças na 1.5:** comentários por cliente (públicos ou internos, com data, hora e autor) no lugar da observação escrita no sistema e da nota interna; a observação principal é a do HubSpot. Afeta §3 e §5.
 
@@ -85,6 +87,13 @@ Para cada cliente a Vay também registra no sistema o **Responsável** (quem da 
 
 Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, Celular ou WhatsApp).
 
+**Correspondência cliente ↔ passageiro (SPEC 1.6):**
+1. mesmo ID de contato no HubSpot; sem ID, mesmo e-mail; sem e-mail, mesmo telefone normalizado (só dígitos, últimos 11);
+2. se nada disso bater, **mesmo nome completo** (sem diferenciar acentos, maiúsculas e espaços; só o primeiro nome não basta), desde que o cliente não tenha sido ligado a outro passageiro do mesmo negócio. O negócio recebe a sinalização **"Vinculado pelo nome"** (pendência até a Vay marcar como conferido);
+3. se ainda assim não bater (apelido, nome incompleto), a Vay usa **"Vincular"** na linha do passageiro e escolhe o cliente da lista: o contato do HubSpot fica gravado no cliente e o vínculo é registrado num comentário interno.
+
+O parceiro vê o passageiro ligado pelas regras 1 e 2 (RLS); pela 3, porque o cliente passa a ter o contato do HubSpot.
+
 ## 4. Fluxos
 
 ### 4.1 Parceiro inicia expedição
@@ -131,6 +140,7 @@ Resultado e sinalizações:
 | Pago 100% com "Crédito na VAY" | vincula, **sem cashback** | Pago com créditos (informativa) |
 | Pagamento misto (crédito + dinheiro), cashback ainda não definido | vincula, cashback **a definir** (R$ 0) | Pagamento misto (pendência até a Vay definir o cashback) |
 | Cashback editado pela Vay | vale o valor editado | Cashback ajustado (informativa, com histórico) |
+| Passageiro ligado ao cliente só pelo nome completo | vincula normalmente | Vinculado pelo nome (pendência até conferir) |
 | Negócio sem rótulo "Titular" em nenhum contato | vincula normalmente | Titular não definido |
 | Nenhuma compatível | não vincula, **não remunera** | Nenhuma expedição encontrada |
 
