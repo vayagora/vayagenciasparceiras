@@ -18,7 +18,7 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
         { href: "/painel", label: "Painel" },
         { href: "/expedicoes", label: "Expedições" },
         { href: "/extrato", label: "Extrato" },
-        { href: "/acordo-de-parceria", label: "Acordo de parceria", external: true },
+        { href: "/acordo", label: "Acordo de parceria" },
       ];
   return (
     <aside className={`sidebar ${isVay ? "vay" : "parceiro"}`}>
@@ -33,7 +33,7 @@ export function Sidebar({ isVay, name, email }: { isVay: boolean; name: string; 
               {it.label}
             </a>
           ) : (
-            <Link key={it.href} href={it.href} className="navlink" aria-current={path.startsWith(it.href) ? "page" : undefined}>
+            <Link key={it.href} href={it.href} className="navlink" aria-current={path === it.href || path.startsWith(`${it.href}/`) ? "page" : undefined}>
               {it.label}
             </Link>
           ),

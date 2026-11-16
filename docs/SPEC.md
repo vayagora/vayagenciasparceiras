@@ -156,6 +156,11 @@ Por cliente: etapa e nota. Salvar grava a data (fuso America/Sao_Paulo). Compras
 
 ## 5. Telas
 
+> **Navegação e telas atuais: protótipo v37** (canvas "Vay Agora — Expedições com parceiros"). Onde os itens abaixo divergirem, vale este resumo:
+> - **Parceiro**: menu Painel (só o bloco "Ganhos": saldo, ganhos do período, negócios fechados, clientes cadastrados e ganhos por produto), Expedições (lista empilhada + "Iniciar expedição"), Extrato e Acordo de parceria (resumo + "Ver redação completa", que abre o PDF).
+> - **Vay**: menu Visão geral (KPIs, conferência, resultado por parceiro e todas as expedições) e Parceiros (um por linha; "Novo parceiro" em modal). No painel de cada parceiro: bloco "Ganhos", botão do acordo e as expedições dele, com "Iniciar expedição".
+> - **Tabela de clientes** (expedição): busca, filtros de etapa e responsável, ordenação A–Z/Z–A, exportar para Excel (linhas filtradas); etapa e responsável editáveis na linha pela Vay; observação em uma linha que abre o modal de comentários; coluna Cliente congelada.
+
 **Parceiro**
 - Painel: **Saldo atual** em destaque (com "Ver extrato") e botão "Acordo de parceria". Filtro Ano + Trimestre (jan–mar, abr–jun, jul–set, out–dez, ou ano inteiro). Padrão: último trimestre concluído em UTC−3. Período em andamento mostra aviso de valores parciais. Período = data de fechamento do negócio. Conteúdo, nesta ordem: KPIs (clientes cadastrados com compras concluídas em destaque, ganhos do período, negócios fechados — sem volume vendido), andamento dos clientes por expedição (compra concluída, em negociação, não contactados, cadastrados), cartões 3%/3%/5% com ganhos do período, tabela "Ganhos por expedição" com total.
 - Extrato: saldo atual, total recebido, total gasto e lançamentos (data, tipo, descrição, origem, valor, saldo) com filtro Tudo/Entradas/Saídas. Mesmo padrão do Portal do Comissário.

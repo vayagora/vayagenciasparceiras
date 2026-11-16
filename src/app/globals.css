@@ -319,3 +319,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .btn.ghost { padding: 0 8px; }
 .input, .select { min-height: 38px; padding-top: 7px; padding-bottom: 7px; font-size: 14px; }
 .tbl .select.cell-sel { min-height: 30px; padding-top: 2px; padding-bottom: 2px; }
+
+/* ===== Acordo (resumo) ===== */
+.agr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.agr-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.agr-list li::marker { color: var(--purple-500); }
+.qrow { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: 14px; }
+.qrow:first-child { border-top: 0; }
+.qrow.next { color: var(--purple-700); font-weight: 600; }
