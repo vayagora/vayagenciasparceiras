@@ -11,7 +11,9 @@ const API = "https://api.hubapi.com";
 export type HubspotConfig = {
   token: string;
   wonStages: string[];
-  titularLabel: string;
+  titularLabels: string[]; // rótulos que marcam o titular (padrão: "Titular" ou "Comprador")
+  buyerLabel: string;
+  passengerLabel: string;
   // Negócio de agência parceira = este campo com este valor + empresa (agência) associada ao negócio
   origemProp: string;
   origemValue: string;
@@ -28,7 +30,9 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
     token,
     // 135525686 = "Emissão Realizada" no funil "Pipeline de Vendas"
     wonStages: (env.HUBSPOT_WON_STAGES ?? "135525686").split(",").map((s) => s.trim()).filter(Boolean),
-    titularLabel: env.HUBSPOT_TITULAR_LABEL ?? "Titular",
+    titularLabels: (env.HUBSPOT_TITULAR_LABEL ?? "Titular,Comprador").split(",").map((s) => s.trim()).filter(Boolean),
+    buyerLabel: env.HUBSPOT_BUYER_LABEL ?? "Comprador",
+    passengerLabel: env.HUBSPOT_PASSENGER_LABEL ?? "Passageiro",
     origemProp: env.HUBSPOT_ORIGEM_PROP ?? "origem_do_negocio",
     origemValue: env.HUBSPOT_ORIGEM_VALUE ?? "Afiliado",
     openStages: (env.HUBSPOT_OPEN_STAGES ?? "appointmentscheduled,qualifiedtobuy,presentationscheduled,135850329,contractsent,135525685")
@@ -267,15 +271,23 @@ export type Association = { contactId: string; labels: string[]; order: number }
 
 // Titular = contato com o rótulo "Titular". Sem rótulo, o associado há mais tempo
 // (primeira vez que a sincronização viu a associação; empate pela ordem da API) + sinalização.
+export const hasLabel = (a: Association, label: string) => a.labels.some((l) => fold(l) === fold(label));
+
+// label: um ou mais rótulos de titular (ex.: "Titular" ou "Comprador"). Entre os rotulados, prefere quem viaja
+// (rótulo de passageiro). Negócio com um contato só não precisa de rótulo.
 export function pickTitular(
   assocs: Association[],
-  label: string,
+  label: string | string[],
   firstSeen: Map<string, string> = new Map(),
+  passengerLabel = "Passageiro",
 ): { titularId: string | null; labeled: boolean } {
   if (!assocs.length) return { titularId: null, labeled: true };
-  const want = fold(label);
-  const labeled = assocs.filter((a) => a.labels.some((l) => fold(l) === want)).sort((a, b) => a.order - b.order);
+  const wants = (Array.isArray(label) ? label : [label]).map(fold);
+  const labeled = assocs
+    .filter((a) => a.labels.some((l) => wants.includes(fold(l))))
+    .sort((a, b) => Number(hasLabel(b, passengerLabel)) - Number(hasLabel(a, passengerLabel)) || a.order - b.order);
   if (labeled.length) return { titularId: labeled[0].contactId, labeled: true };
+  if (assocs.length === 1) return { titularId: assocs[0].contactId, labeled: true };
   const far = "9999-12-31T00:00:00Z";
   const oldest = [...assocs].sort(
     (a, b) =>

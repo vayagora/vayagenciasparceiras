@@ -74,6 +74,9 @@ export type Passenger = {
   email: string;
   phone: string;
   is_titular: boolean;
+  // Rótulos "Comprador" e "Passageiro" do HubSpot: quem comprou e quem viaja
+  is_buyer: boolean;
+  is_passenger: boolean;
   first_seen_at: string;
   position: number;
 };

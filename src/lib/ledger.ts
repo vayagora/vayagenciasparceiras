@@ -29,6 +29,8 @@ export type ClientLine = {
   hiddenPassengers: number;
   // Visão Vay: passageiros não cadastrados, exibidos como linhas próprias logo abaixo
   unregistered: { passenger: Passenger; deal: Resolved }[];
+  // Quem comprou, quando foi outra pessoa (rótulo "Comprador" no HubSpot)
+  boughtBy: string[];
 };
 
 // Etapa exibida (SPEC 1.4): compra concluída no HubSpot > "não contactar"/"comprou em outro lugar" (Vay)
@@ -83,6 +85,15 @@ export class Ledger {
       com: primary.reduce((a, r) => addMoney(a, r.com), ZERO),
       hiddenPassengers: primary.reduce((a, r) => a + r.unregisteredCount, 0),
       unregistered: primary.flatMap((r) => r.unregistered.map((passenger) => ({ passenger, deal: r }))),
+      boughtBy: [
+        ...new Set(
+          deals.flatMap((r) => {
+            const me = r.registered.find((x) => x.client.id === c.id)?.passenger;
+            const buyer = r.deal.passengers.find((p) => p.is_buyer);
+            return buyer && me && !me.is_buyer && buyer.id !== me.id ? [buyer.name] : [];
+          }),
+        ),
+      ],
     };
   }
 

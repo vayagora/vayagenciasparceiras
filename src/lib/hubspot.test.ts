@@ -12,6 +12,27 @@ describe("titular do negócio (rótulo de associação)", () => {
     expect(pickTitular([a("1", 0), a("2", 1, ["Titular"])], "Titular")).toEqual({ titularId: "2", labeled: true });
   });
 
+  it("aceita vários rótulos de titular ('Titular' ou 'Comprador') e prefere quem viaja", () => {
+    const as = [a("1", 0, ["Comprador"]), a("2", 1, ["Comprador", "Passageiro"])];
+    expect(pickTitular(as, ["Titular", "Comprador"])).toEqual({ titularId: "2", labeled: true });
+  });
+
+  it("negócio com um contato só não precisa de rótulo", () => {
+    expect(pickTitular([a("9", 0)], ["Titular"])).toEqual({ titularId: "9", labeled: true });
+  });
+
+  it("planPassengers: Comprador e Passageiro viram is_buyer/is_passenger; sem rótulo de passageiro, todos viajam", () => {
+    const contacts = new Map([["1", { id: "1", name: "Pai", email: "", phone: "" }], ["2", { id: "2", name: "Filha", email: "", phone: "" }]]);
+    const labels = { titular: ["Titular", "Comprador"], buyer: "Comprador", passenger: "Passageiro" };
+    const p = planPassengers([a("1", 0, ["Comprador"]), a("2", 1, ["Passageiro"])], contacts, new Map(), labels, "2026-11-01T00:00:00Z");
+    expect(p.rows.map((r) => [r.name, r.is_buyer, r.is_passenger, r.is_titular])).toEqual([
+      ["Pai", true, false, true],
+      ["Filha", false, true, false],
+    ]);
+    const semRotulo = planPassengers([a("1", 0), a("2", 1)], contacts, new Map(), labels, "2026-11-01T00:00:00Z");
+    expect(semRotulo.rows.every((r) => r.is_passenger)).toBe(true);
+  });
+
   it("ignora acentos e maiúsculas no rótulo", () => {
     expect(pickTitular([a("1", 0, ["titular"])], "Titular").labeled).toBe(true);
   });

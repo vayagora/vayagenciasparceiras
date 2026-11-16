@@ -77,7 +77,7 @@ export default async function ExpeditionPage({
         !isVay && l.hiddenPassengers
           ? `+${l.hiddenPassengers} ${l.hiddenPassengers === 1 ? "passageiro não cadastrado" : "passageiros não cadastrados"}`
           : undefined,
-      stage: stageCell(l.stage, c.stage, isVay),
+      stage: { ...stageCell(l.stage, c.stage, isVay), sub: l.boughtBy.length ? `comprado por ${l.boughtBy.join(", ")}` : undefined },
       owner: { id: c.owner_id, name: c.owner_name, editable: isVay },
       dealNos: l.deals.map((r) => dealNo(r.deal)),
       prods: prods(l.primary, l.included, l.deals.length > 0),
@@ -109,7 +109,7 @@ export default async function ExpeditionPage({
   }
   if (isVay)
     for (const r of outside) {
-      const ps = sortPassengers(r.deal.passengers);
+      const ps = sortPassengers(r.deal.passengers.filter((p) => p.is_passenger !== false));
       tableRows.push({
         key: r.deal.id,
         clientId: null,
@@ -246,7 +246,7 @@ export default async function ExpeditionPage({
                           <span key={p.id}>
                             {i ? " · " : ""}
                             <span className={p.is_titular ? "strong" : undefined}>{p.name}</span>
-                            {p.is_titular ? " (titular)" : ""}
+                            {p.is_buyer && !p.is_passenger ? " (comprador, não viaja)" : p.is_buyer ? " (comprador)" : p.is_titular ? " (titular)" : ""}
                             {notListed ? <span className="muted"> · não cadastrado</span> : null}
                           </span>
                         );

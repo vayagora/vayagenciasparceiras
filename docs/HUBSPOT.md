@@ -93,8 +93,12 @@ O código de reserva não é copiado (fica só no HubSpot).
 
 ## Passageiros
 
-Contatos associados ao negócio; o rótulo de associação "Titular" (`HUBSPOT_TITULAR_LABEL`) marca o titular.
-**Pendente no HubSpot:** criar esse rótulo (Configurações › Objetos › Negócios › Associações).
+Contatos associados ao negócio, com os rótulos de associação da conta:
+
+- **"Comprador"** (`HUBSPOT_BUYER_LABEL`): quem pagou. Também marca o titular (`HUBSPOT_TITULAR_LABEL`, padrão `Titular,Comprador`;
+  entre vários, vale o que também é passageiro). Negócio com um contato só não precisa de rótulo.
+- **"Passageiro"** (`HUBSPOT_PASSENGER_LABEL`): quem viaja. Só eles entram na correspondência com os clientes do parceiro.
+  Sem nenhum rótulo de passageiro no negócio, todos os contatos contam como passageiros.
 
 ## App privado
 

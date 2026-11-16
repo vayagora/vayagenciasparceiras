@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 1.6 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 1.7 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 1.7:** rótulos de associação "Comprador" e "Passageiro" do HubSpot (comprador que não viaja não conta como passageiro; quem viajou sem comprar mostra "comprado por …"); "Comprador" também marca o titular; negócio com um contato só não precisa de rótulo; reconhecimento pelo nome ignora de/da/do/das/dos/e. Afeta §3, §4.3 e §6.
 
 **Mudanças na 1.6:** passageiro e cliente também se reconhecem pelo nome completo (com sinalização "Vinculado pelo nome"), e a Vay pode vincular manualmente um passageiro a um cliente da lista. Afeta §3 e §4.4.
 
@@ -89,10 +91,12 @@ Cliente ↔ contato do HubSpot: por e-mail; sem e-mail, por telefone (Telefone, 
 
 **Correspondência cliente ↔ passageiro (SPEC 1.6):**
 1. mesmo ID de contato no HubSpot; sem ID, mesmo e-mail; sem e-mail, mesmo telefone normalizado (só dígitos, últimos 11);
-2. se nada disso bater, **mesmo nome completo** (sem diferenciar acentos, maiúsculas e espaços; só o primeiro nome não basta), desde que o cliente não tenha sido ligado a outro passageiro do mesmo negócio. O negócio recebe a sinalização **"Vinculado pelo nome"** (pendência até a Vay marcar como conferido);
+2. se nada disso bater, **mesmo nome completo** (sem diferenciar acentos, maiúsculas, espaços e as partículas de/da/do/das/dos/e; só o primeiro nome não basta), desde que o cliente não tenha sido ligado a outro passageiro do mesmo negócio. O negócio recebe a sinalização **"Vinculado pelo nome"** (pendência até a Vay marcar como conferido);
 3. se ainda assim não bater (apelido, nome incompleto), a Vay usa **"Vincular"** na linha do passageiro e escolhe o cliente da lista: o contato do HubSpot fica gravado no cliente e o vínculo é registrado num comentário interno.
 
 O parceiro vê o passageiro ligado pelas regras 1 e 2 (RLS); pela 3, porque o cliente passa a ter o contato do HubSpot.
+
+**Comprador e passageiros (SPEC 1.7):** no HubSpot, os contatos do negócio têm os rótulos de associação **"Comprador"** (quem pagou) e **"Passageiro"** (quem viaja). Só os passageiros entram na correspondência com a lista do parceiro; um comprador que não viaja (ex.: pai que compra para a filha) não conta como acompanhante. Para o passageiro que não foi o comprador, a etapa mostra "Compra concluída · comprado por {comprador}" (o parceiro só vê o nome do comprador se ele também for cliente cadastrado dele). Sem nenhum rótulo "Passageiro" no negócio, todos os contatos contam como passageiros.
 
 ## 4. Fluxos
 

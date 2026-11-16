@@ -4,6 +4,7 @@ import {
   dealCompanies,
   dealContacts,
   findContacts,
+  hasLabel,
   matchPartner,
   paymentMethods,
   FIELDS,
@@ -32,6 +33,8 @@ export type PassengerRow = {
   email: string;
   phone: string;
   is_titular: boolean;
+  is_buyer: boolean;
+  is_passenger: boolean;
   first_seen_at: string;
   position: number;
 };
@@ -41,10 +44,13 @@ export function planPassengers(
   assocs: Association[],
   contacts: Map<string, HsContact>,
   firstSeen: Map<string, string>,
-  titularLabel: string,
+  labels: string | string[] | { titular: string[]; buyer: string; passenger: string },
   now: string,
 ): { rows: PassengerRow[]; labeled: boolean } {
-  const { titularId, labeled } = pickTitular(assocs, titularLabel, firstSeen);
+  const l = typeof labels === "object" && !Array.isArray(labels) ? labels : { titular: [labels].flat(), buyer: "Comprador", passenger: "Passageiro" };
+  const { titularId, labeled } = pickTitular(assocs, l.titular, firstSeen, l.passenger);
+  // Sem nenhum rótulo de passageiro no negócio, todos os contatos contam como passageiros.
+  const anyPassenger = assocs.some((a) => hasLabel(a, l.passenger));
   const rows = assocs.map((a) => {
     const c = contacts.get(a.contactId);
     return {
@@ -53,6 +59,8 @@ export function planPassengers(
       email: c?.email ?? "",
       phone: c?.phone ?? "",
       is_titular: a.contactId === titularId,
+      is_buyer: hasLabel(a, l.buyer),
+      is_passenger: !anyPassenger || hasLabel(a, l.passenger),
       first_seen_at: firstSeen.get(a.contactId) ?? now,
       position: a.order,
     };
@@ -242,7 +250,7 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
           .eq("deal_id", existing.id);
         firstSeen = new Map((prev ?? []).filter((p) => p.hubspot_contact_id).map((p) => [p.hubspot_contact_id!, p.first_seen_at]));
       }
-      const plan = planPassengers(list, contacts, firstSeen, cfg.titularLabel, new Date().toISOString());
+      const plan = planPassengers(list, contacts, firstSeen, { titular: cfg.titularLabels, buyer: cfg.buyerLabel, passenger: cfg.passengerLabel }, new Date().toISOString());
 
       // Só os campos espelhados: override/conferência da Vay não são tocados.
       const { data: deal, error } = await admin
@@ -310,7 +318,9 @@ async function syncClients(
     list.flatMap((d): StatusDeal[] => {
       const trip = readLegsAny(d.properties);
       if (!trip) return [];
-      const people = (as.get(d.id) ?? []).map((a) => {
+      const all = as.get(d.id) ?? [];
+      const anyPassenger = all.some((a) => hasLabel(a, cfg.passengerLabel));
+      const people = all.filter((a) => !anyPassenger || hasLabel(a, cfg.passengerLabel)).map((a) => {
         const c = cs.get(a.contactId);
         return { contactId: a.contactId, name: c?.name ?? "", email: c?.email ?? "", phone: c?.phone ?? "" };
       });

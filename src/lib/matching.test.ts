@@ -12,7 +12,7 @@ const madrid: Expedition = { id: "eMad", partner_id: "pA", name: "Congresso de C
 let seq = 1;
 function pax(name: string, opts: Partial<Passenger> = {}): Passenger {
   const email = `${name.toLowerCase()}@email.com`;
-  return { id: `px-${name}-${seq++}`, deal_id: "", hubspot_contact_id: null, name, email, phone: "", is_titular: false, first_seen_at: "", position: 0, ...opts };
+  return { id: `px-${name}-${seq++}`, deal_id: "", hubspot_contact_id: null, name, email, phone: "", is_titular: false, is_buyer: false, is_passenger: true, first_seen_at: "", position: 0, ...opts };
 }
 
 function deal(over: Partial<Deal> & { passengers?: Passenger[] } = {}): Deal {
@@ -496,6 +496,43 @@ describe("reconhecimento pelo nome completo", () => {
     expect(r.registered).toHaveLength(1);
     expect(r.registered[0].byName).toBeUndefined();
     expect(flagKeys(r)).toEqual(["acompanhante"]);
+  });
+});
+
+describe("comprador e passageiros (rótulos do HubSpot)", () => {
+  // Caso real: Eduardo (Comprador, Passageiro) comprou para Gabriela (Passageiro); na planilha ela está sem o "de".
+  const eduardo = { ...client("Eduardo", "2026-10-01"), name: "Eduardo Dias da Cunha Lima", email: "" };
+  const gabriela = { ...client("Gabriela", "2026-10-02"), name: "Gabriela Tolentino Boaventura Almeida", email: "" };
+  const d = () =>
+    deal({
+      passengers: [
+        pax("Eduardo", { name: "Eduardo Dias da Cunha Lima", email: "edulima@gmail.com", is_titular: true, is_buyer: true }),
+        pax("Gabriela", { name: "Gabriela Tolentino Boaventura de Almeida", email: "" }),
+      ],
+    });
+
+  it("nome ignora de/da/do: Gabriela é reconhecida; compra concluída, 'comprado por' o Eduardo", () => {
+    const l = new Ledger([d()], [partner], [madrid], [eduardo, gabriela]);
+    const g = l.clientLine(gabriela);
+    const e = l.clientLine(eduardo);
+    expect(g.stage).toBe("fechado");
+    expect(g.boughtBy).toEqual(["Eduardo Dias da Cunha Lima"]);
+    expect(g.primary).toEqual([]); // valores ficam na linha do comprador/titular
+    expect(e.boughtBy).toEqual([]);
+    expect(e.com.total).toBeCloseTo(450);
+    expect(flagKeys(l.resolved[0])).toEqual(["nome"]); // Gabriela foi ligada pelo nome: conferir
+  });
+
+  it("comprador que não viaja não conta como passageiro nem como acompanhante", () => {
+    const pai = pax("Pai", { name: "Pai Comprador", email: "pai@x.com", is_titular: true, is_buyer: true, is_passenger: false });
+    const filha = pax("Filha", { name: "Filha Viajante", email: "filha@x.com" });
+    const cFilha = { ...client("Filha", "2026-10-01"), email: "filha@x.com" };
+    const l = new Ledger([deal({ passengers: [pai, filha], passenger_count: 1 })], [partner], [madrid], [cFilha]);
+    const r = l.resolved[0];
+    expect(flagKeys(r)).toEqual([]); // sem "acompanhante fora da expedição"
+    expect(r.unregisteredCount).toBe(0);
+    expect(l.clientLine(cFilha).boughtBy).toEqual(["Pai Comprador"]);
+    expect(l.clientLine(cFilha).com.total).toBeCloseTo(450);
   });
 });
 

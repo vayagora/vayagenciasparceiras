@@ -133,8 +133,11 @@ export type Resolved = {
   fixes: string[];
 };
 
+// Sem acentos, minúsculo, espaços simples e sem as partículas de/da/do/das/dos/e (igual a fold_name, migração 0011)
 const foldName = (s: string) =>
-  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  ` ${s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()} `
+    .replace(/ ((de|da|do|das|dos|e) )+/g, " ")
+    .trim();
 
 // Indício mais fraco que samePerson: mesmo nome completo, sem diferenciar acentos, maiúsculas e espaços
 // (pelo menos nome e sobrenome; só o primeiro nome não basta). Espelha names_match() da migração 0010.
@@ -166,7 +169,8 @@ export function linkPassengers(deal: Deal, expClients: Client[]) {
   const unregistered: Passenger[] = [];
   const used = new Set<string>();
   const pending: Passenger[] = [];
-  for (const p of sortPassengers(deal.passengers ?? [])) {
+  // Só quem viaja: comprador que não é passageiro (rótulo do HubSpot) não entra na lista nem conta como acompanhante.
+  for (const p of sortPassengers((deal.passengers ?? []).filter((x) => x.is_passenger !== false))) {
     const c = expClients.find((x) => samePerson(x, p));
     if (c) {
       registered.push({ passenger: p, client: c });
@@ -181,7 +185,7 @@ export function linkPassengers(deal: Deal, expClients: Client[]) {
     } else unregistered.push(p);
   }
   registered.sort((a, b) => Number(b.passenger.is_titular) - Number(a.passenger.is_titular) || a.passenger.position - b.passenger.position);
-  const total = Math.max(Number(deal.passenger_count) || 0, deal.passengers?.length ?? 0);
+  const total = Math.max(Number(deal.passenger_count) || 0, (deal.passengers ?? []).filter((x) => x.is_passenger !== false).length);
   const titular = registered.find((r) => r.passenger.is_titular);
   const first = [...registered].sort((a, b) => (a.client.created_at < b.client.created_at ? -1 : 1))[0];
   return {

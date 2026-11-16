@@ -18,7 +18,7 @@ export type TableRow = {
   people: { name: string; suffix?: string; contact: string }[];
   hiddenTxt?: string;
   tag?: { label: string; tone: Tone };
-  stage: { id: StageId; label: string; tone: Tone; editable: boolean; manual: ManualStage };
+  stage: { id: StageId; label: string; tone: Tone; editable: boolean; manual: ManualStage; sub?: string };
   owner: { id: string | null; name: string; editable: boolean };
   dealNos: string[];
   prods: { product: Product; primary: ProductDeal[]; included: ProductDeal[]; hasDeal: boolean }[];
@@ -151,7 +151,7 @@ export function ClientsTable({
         r.people.map((p) => p.name + (p.suffix ?? "")).join(" / "),
         r.email,
         r.phone,
-        r.stage.label,
+        r.stage.label + (r.stage.sub ? ` (${r.stage.sub})` : ""),
         r.owner.name,
         r.dealNos.join(", "),
         prod("voo"),
@@ -293,7 +293,10 @@ function Row({
             {manualStageOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         ) : (
-          <span className={`badge ${r.stage.tone} dot`}>{r.stage.label}</span>
+          <>
+            <span className={`badge ${r.stage.tone} dot`}>{r.stage.label}</span>
+            {r.stage.sub ? <div className="sub">{r.stage.sub}</div> : null}
+          </>
         )}
       </td>
       <td>

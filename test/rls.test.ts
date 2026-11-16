@@ -135,6 +135,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     `);
     await db.query(sql("0009_comentarios.sql"));
     await db.query(sql("0010_vinculo_por_nome.sql"));
+    await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(GRANTS);
   });
 
@@ -354,6 +355,25 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(`delete from clients where id = $1`, [eli.id]);
   });
 
+  it("0011: nome ignora de/da/do; comprador que não viaja não conta como passageiro", async () => {
+    expect(
+      await rows(
+        `select names_match('Gabriela Tolentino Boaventura Almeida', 'Gabriela Tolentino Boaventura de Almeida') as a,
+                names_match('Ana da Silva', 'Ana Silva') as b, names_match('Ana', 'Ana de') as c`,
+      ),
+    ).toEqual([{ a: true, b: true, c: false }]);
+    const [d] = await rows(
+      `insert into deals (hubspot_id, afiliado, closed_on, legs, end_date, voo) values ('9100', 'Horizonte Eventos', '2026-10-09', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19', 1000) returning id`,
+    );
+    await db.query(
+      `insert into deal_passengers (deal_id, hubspot_contact_id, name, is_titular, is_buyer, is_passenger, position) values
+        ($1, '1', 'Pai Comprador', true, true, false, 0), ($1, '2', 'Filho Viajante', false, false, true, 1)`,
+      [d.id],
+    );
+    expect(await rows(`select passenger_count from deals where id = $1`, [d.id])).toEqual([{ passenger_count: 1 }]);
+    await db.query(`delete from deals where id = $1`, [d.id]);
+  });
+
   it("dados de demonstração rodam depois das migrações", async () => {
     await db.query("drop schema public cascade; create schema public; truncate auth.users;");
     await db.query(sql("0001_init.sql"));
@@ -365,6 +385,7 @@ describe.skipIf(!url)("RLS · passageiros do negócio", () => {
     await db.query(sql("0008_contato_manual.sql"));
     await db.query(sql("0009_comentarios.sql"));
     await db.query(sql("0010_vinculo_por_nome.sql"));
+    await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);
