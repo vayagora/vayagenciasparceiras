@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Ledger } from "./ledger";
-import { calculatedCashback, dealNo, hubspotFixes, resolveDeals, samePerson, sameName } from "./matching";
+import { calculatedCashback, dealNo, hubspotFixes, matchExpedition, resolveDeals, samePerson, sameName } from "./matching";
 import { bestStage, dealStage, paymentKind } from "./commission";
 import type { Deal, Expedition, Partner, Passenger } from "./types";
 
@@ -125,6 +125,12 @@ describe("vínculo negócio → expedição (sempre automático)", () => {
     expect(r.exp?.id).toBe("Maiorca 08/10");
     expect(r.candIds).toEqual(["Maiorca 08/10"]);
     expect(flagKeys(r)).toEqual(["aprox"]);
+  });
+
+  it("matchExpedition (usado na sincronização): a de maior pontuação, ou nenhuma", () => {
+    const barcelona: Expedition = { ...madrid, id: "eBcn", city: "Barcelona", start_date: "2026-11-12" };
+    expect(matchExpedition(deal(), [barcelona, madrid])?.id).toBe("eMad");
+    expect(matchExpedition(deal({ legs: [{ city: "Paris", date: "2026-08-01" }], end_date: "2026-08-10" }), [madrid])).toBeNull();
   });
 
   it("comissão 3% / 3% / 5% sobre o valor do negócio (acordo, item 4.1)", () => {

@@ -24,7 +24,7 @@ import {
 } from "./hubspot";
 import { expEnd } from "./commission";
 import { dayNum, isoOf } from "./format";
-import { DEFAULT_TOL, evalDeal } from "./matching";
+import { DEFAULT_TOL, evalDeal, matchExpedition } from "./matching";
 import type { DealDetails, Expedition, Leg, StageKind } from "./types";
 
 export type PassengerRow = {
@@ -217,7 +217,10 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
         }
         keptUnsignaled.push(h.id);
       } else keptSignaled.push(h.id);
-      const row = mapped.row;
+      // Expedição do negócio da agência (para as "Pendências de lançamento" do parceiro, SPEC 2.2)
+      const pid = signaled ? partnerIdByAfiliado.get(partner!) : undefined;
+      const matched = pid ? matchExpedition(mapped.row, exps.filter((e) => e.partner_id === pid)) : null;
+      const row = { ...mapped.row, matched_expedition_id: matched?.id ?? null };
       const list = assocs.get(h.id) ?? [];
       const { data: existing } = await admin.from("deals").select("id").eq("hubspot_id", h.id).maybeSingle();
       let firstSeen = new Map<string, string>();

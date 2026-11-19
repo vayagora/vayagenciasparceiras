@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.1 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.2 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.2 — pendências de lançamento na visão do parceiro:** na tela da expedição, o parceiro vê a seção **"Pendências de lançamento"** com **só os nomes** dos passageiros "A conferir" de negócios marcados como da agência dele no HubSpot (Origem "Agências Parceiras" + empresa associada; na prática, negócios com mais de um passageiro). Não aparecem: negócios não sinalizados (sem origem ou sem a empresa), passageiros "Conferidos" e quem já está em Passageiros. Feito no banco pela função `partner_pending_names` (migração 0015), que devolve só o nome; a expedição de cada negócio da agência é gravada na sincronização (`deals.matched_expedition_id`).
 
 **Mudanças na 2.1 — conferência por passageiro (prevalece sobre a 2.0 onde houver conflito):**
 

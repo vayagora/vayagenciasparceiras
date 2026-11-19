@@ -149,6 +149,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0012_conferencia.sql"));
     await db.query(sql("0013_somente_leitura.sql"));
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
+    await db.query(sql("0015_pendencias_de_lancamento.sql"));
     await db.query(GRANTS);
   });
 
@@ -242,6 +243,31 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     expect(await as(ID.pb, () => rows(`select id from balance_entries where expedition_id = $1`, [ID.expA]))).toEqual([]);
     await fails(`delete from expeditions where id = $1`, [ID.expA], /foreign key/);
     await db.query(`delete from balance_entries where expedition_id = $1`, [ID.expA]);
+  });
+
+  it("0015: pendências de lançamento: parceiro vê só os nomes do próprio negócio com vários passageiros, sem os conferidos", async () => {
+    await db.query(`update deals set matched_expedition_id = $1 where id = $2`, [ID.expA, ID.dealA]);
+    // não sinalizado com vários passageiros na mesma expedição: nunca aparece para o parceiro
+    const [u] = await rows(
+      `insert into deals (hubspot_id, afiliado, signaled, hs_agency, closed_on, legs, end_date, matched_expedition_id)
+       values ('9300', '', false, 'Horizonte Eventos', '2026-09-01', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19', $1) returning id`,
+      [ID.expA],
+    );
+    await db.query(`insert into deal_passengers (deal_id, hubspot_contact_id, name, is_titular, position) values ($1, '931', 'Estranho Um', true, 0), ($1, '932', 'Estranho Dois', false, 1)`, [u.id]);
+    const names = (uid: string, exp: string) => as(uid, async () => (await rows(`select person_name from partner_pending_names($1) order by 1`, [exp])).map((r) => r.person_name));
+
+    expect(await names(ID.pa, ID.expA)).toEqual(["Emerson Souza", "Gislaine Souza"]);
+    expect(await names(ID.pb, ID.expA)).toEqual([]); // expedição de outro parceiro
+    // conferido pela Vay: some
+    await db.query(`insert into expedition_reviews (expedition_id, person_key, person_name) values ($1, 'c:902', 'Gislaine Souza')`, [ID.expA]);
+    expect(await names(ID.pa, ID.expA)).toEqual(["Emerson Souza"]);
+    // e o parceiro continua sem acesso aos negócios e passageiros em si
+    await as(ID.pa, async () => {
+      expect(await rows(`select id from deal_passengers where deal_id = $1`, [ID.dealA])).toEqual([]);
+    });
+    await db.query(`delete from expedition_reviews`);
+    await db.query(`delete from deals where id = $1`, [u.id]);
+    await db.query(`update deals set matched_expedition_id = null where id = $1`, [ID.dealA]);
   });
 
   it("parceiro não grava passageiros nem lê o histórico de sincronização", async () => {
@@ -374,6 +400,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0012_conferencia.sql"));
     await db.query(sql("0013_somente_leitura.sql"));
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
+    await db.query(sql("0015_pendencias_de_lancamento.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

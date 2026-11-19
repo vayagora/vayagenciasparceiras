@@ -6,6 +6,7 @@ import { dealNo, RULE_TIP, type Resolved } from "@/lib/matching";
 import type { ReviewPerson } from "@/lib/ledger";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
+import { createClient } from "@/lib/supabase/server";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
 import { FinishExpedition } from "./forms";
@@ -52,6 +53,13 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
       hsNote: l.note,
     };
   });
+
+  // Parceiro: só os nomes das pendências de lançamento (negócios da agência com vários passageiros, não conferidos)
+  let pendingNames: string[] = [];
+  if (!isVay) {
+    const { data } = await (await createClient()).rpc("partner_pending_names", { exp_id: exp.id });
+    pendingNames = ((data ?? []) as { person_name: string }[]).map((x) => x.person_name).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
 
   // Conferência (só Vay): abas A conferir / Conferidos
   const queue = isVay ? ledger.reviewQueue(exp) : { pending: [], done: [] };
@@ -192,6 +200,21 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
           />
         </section>
       )}
+      {!isVay && pendingNames.length ? (
+        <section className="card pad stack" style={{ gap: 8 }}>
+          <div className="ttl">
+            <h2 className="section-title">Pendências de lançamento</h2>
+            <Badge tone="yellow">{pendingNames.length}</Badge>
+            <Tip>
+              Passageiros desta expedição cujas compras a equipe Vay Agora ainda está organizando. Assim que forem lançadas,
+              eles passam para a lista acima, com os valores e o seu ganho.
+            </Tip>
+          </div>
+          <ul className="agr-list">
+            {pendingNames.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        </section>
+      ) : null}
     </>
   );
 }

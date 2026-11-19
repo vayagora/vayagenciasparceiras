@@ -174,6 +174,16 @@ export function calculatedCashback(d: Deal): number {
   return cashback({ ...d, cashback_override: null }).com.total;
 }
 
+// Expedição de maior pontuação para o negócio entre as dadas (as do parceiro); null se nenhuma combina.
+export function matchExpedition(d: Pick<Deal, "legs" | "end_date">, exps: Expedition[], tol: Tolerances = DEFAULT_TOL): Expedition | null {
+  let best: { e: Expedition; score: number } | null = null;
+  for (const e of exps) {
+    const m = evalDeal(d, e, tol);
+    if (m && (!best || m.score > best.score)) best = { e, score: m.score };
+  }
+  return best?.e ?? null;
+}
+
 // Vínculo de cada negócio (SPEC 2.0): sempre automático, pelo parceiro + destino + data.
 // Mais de uma expedição possível → a de maior pontuação (destino e datas mais próximos), com aviso só informativo.
 export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expedition[], tol: Tolerances = DEFAULT_TOL): Resolved[] {
