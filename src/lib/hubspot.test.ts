@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
 import { airportShort, paymentMethods, phoneVariants, readDetails, readLegsAny, toTime } from "./hubspot";
-import { airportPlace, hubspotConfig, isAgencyOrigem, matchPartner, stageKind, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
+import { airportPlace, hubspotConfig, isAgencyOrigem, readCredit, matchPartner, stageKind, money, normalizeCity, pickAgency, pickTitular, readTrip, searchWonDealsInWindow, toIsoDate, type Association } from "./hubspot";
 import { mapDeal, matchesSomeExpedition, planPassengers } from "./sync";
 import type { Expedition } from "./types";
 
@@ -236,6 +236,15 @@ describe("conversões do negócio", () => {
 
   it("mapDeal: sem empresa associada é ignorado", () => {
     expect(mapDeal({ id: "1", properties: aereo }, null)).toEqual({ skip: "sem empresa (agência) associada" });
+  });
+
+  it("créditos: acúmulo respeita o sinal; uso é sempre saída; sem tipo, decide pelo valor", () => {
+    expect(readCredit("1", { tipo_de_movimentacao: "Acúmulo", valor_total_do_credito: "6808.17", hs_course_name: "3Q 2026", motivo_do_credito: "Programa Afiliados", hs_createdate: "2026-10-27T18:43:25Z" })).toEqual({
+      hubspot_id: "1", created_on: "2026-10-27T18:43:25Z", title: "3Q 2026", kind: "acumulo", reason: "Programa Afiliados", amount: 6808.17,
+    });
+    expect(readCredit("2", { tipo_de_movimentacao: "Acúmulo", valor_total_do_credito: "-8633.08" }).amount).toBe(-8633.08);
+    expect(readCredit("3", { tipo_de_movimentacao: "Uso", valor_utilizado: "500" })).toMatchObject({ kind: "uso", amount: -500 });
+    expect(readCredit("4", { valor_utilizado: "120" })).toMatchObject({ kind: "uso", amount: -120 });
   });
 
   it("sem token, a integração fica desligada", () => {

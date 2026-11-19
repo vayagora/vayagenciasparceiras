@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AIRPORTS } from "@/lib/airports";
 import { loadWorld, requireVay } from "@/lib/data";
-import { dayNum, lower, plural, todayIso } from "@/lib/format";
+import { brl, dayNum, lower, plural, todayIso } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
 
@@ -65,8 +65,9 @@ export async function createExpedition(_: FormState, f: FormData): Promise<FormS
 
 // ---------------------------------------------------------------- Fechamento da expedição
 
-// A Vay confirma que a expedição aconteceu: os créditos (ganho dos negócios ganhos vinculados, calculado agora)
-// são lançados uma única vez no extrato do parceiro. Depois disso o valor não muda (período fechado).
+// A Vay confirma que a expedição aconteceu: o ganho (negócios ganhos da lista, calculado agora) fica registrado
+// como valor apurado, congelado (período fechado). O crédito em si é lançado pela equipe no HubSpot
+// (objeto Créditos da empresa) e aparece no extrato na sincronização (SPEC 2.3).
 export async function finishExpedition(expId: string): Promise<FormState> {
   const s = await requireVay();
   const supabase = await createClient();
@@ -82,36 +83,21 @@ export async function finishExpedition(expId: string): Promise<FormState> {
   const who = s.profile.full_name || s.profile.email;
   const now = new Date().toISOString();
 
-  // Marca primeiro (só a primeira tentativa passa: finished_at ainda vazio)
   const { data: marked, error: mErr } = await supabase
     .from("expeditions")
-    .update({ finished_at: now, finished_by: s.profile.id, finished_by_name: who })
+    .update({ finished_at: now, finished_by: s.profile.id, finished_by_name: who, finished_amount: total })
     .eq("id", exp.id)
     .is("finished_at", null)
     .select("id");
   if (mErr) return { error: "Não foi possível finalizar a expedição." };
   if (!marked?.length) return { error: "Esta expedição já foi finalizada." };
-
-  if (total > 0) {
-    const { error } = await supabase.from("balance_entries").insert({
-      partner_id: exp.partner_id,
-      expedition_id: exp.id,
-      kind: "in",
-      amount: total,
-      entry_date: todayIso(),
-      title: `Créditos da expedição ${exp.name}`,
-      note: plural(deals.length, "negócio", "negócios"),
-      created_by: s.profile.id,
-      created_by_name: who,
-    });
-    if (error) {
-      // Desfaz a marcação para poder tentar de novo
-      await supabase.from("expeditions").update({ finished_at: null, finished_by: null, finished_by_name: "" }).eq("id", exp.id);
-      return { error: "Não foi possível lançar os créditos no extrato." };
-    }
-  }
   revalidatePath("/", "layout");
-  return { ok: total > 0 ? "Expedição finalizada e créditos lançados no extrato." : "Expedição finalizada (sem créditos a lançar)." };
+  return {
+    ok:
+      total > 0
+        ? `Expedição finalizada: ${brl(total)} apurados (${plural(deals.length, "negócio", "negócios")}). Lance esse crédito no HubSpot, no objeto Créditos da empresa.`
+        : "Expedição finalizada (sem créditos a lançar).",
+  };
 }
 
 // ---------------------------------------------------------------- Conferência (SPEC 2.1)
@@ -149,6 +135,7 @@ export async function syncNow(): Promise<FormState> {
     ok:
       plural(r.deals, "negócio sincronizado", "negócios sincronizados") +
       (r.unsignaled ? ` · ${plural(r.unsignaled, "encontrado sem sinalização no HubSpot", "encontrados sem sinalização no HubSpot")}` : "") +
+      (r.credits ? ` · ${r.credits}` : "") +
       (r.skipped.length
         ? ` · ${r.skipped.length} ignorado${r.skipped.length === 1 ? "" : "s"}: ` +
           r.skipped.slice(0, 5).map((x) => `#${x.id} (${x.reason})`).join(", ") +

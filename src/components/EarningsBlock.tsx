@@ -40,7 +40,7 @@ export function EarningsBlock({
   const stats = exps.map((e) => ledger.expStats(e));
   const totalClients = stats.reduce((a, t) => a + t.n, 0);
   const totalClosed = stats.reduce((a, t) => a + t.closed, 0);
-  const st = buildStatement(partner, world.entries, world.exps);
+  const st = buildStatement(partner, world.credits);
   const pendingRelease = toRelease(partner, ledger, world.exps).reduce((a, x) => a + x.total, 0);
 
   const periodShort = pQ === "all" ? `Ano de ${pYear}` : `${pQ}º tri/${pYear}`;

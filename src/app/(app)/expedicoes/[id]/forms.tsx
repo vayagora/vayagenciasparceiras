@@ -27,16 +27,17 @@ export function FinishExpedition({ expId, expName, total, deals }: { expId: stri
         </div>
         <div className="stack" style={{ gap: 12 }}>
           <p>
-            Confirme que a expedição aconteceu corretamente. Os créditos de <strong>{total}</strong> ({deals}{" "}
-            {deals === 1 ? "negócio" : "negócios"}) serão lançados no extrato do parceiro.
+            Confirme que a expedição aconteceu corretamente. O ganho de <strong>{total}</strong> ({deals}{" "}
+            {deals === 1 ? "negócio" : "negócios"}) fica registrado como valor apurado desta expedição.
           </p>
           <p className="small muted">
-            Depois de finalizada, o valor fica congelado: mudanças no HubSpot não alteram mais os créditos desta expedição.
+            Depois, lance esse valor em créditos no HubSpot (objeto Créditos da empresa da agência): ele aparece no
+            extrato do parceiro na próxima sincronização. O valor apurado fica congelado.
           </p>
           {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
           <div className="row">
             <button type="button" className="btn primary" disabled={pending} onClick={run}>
-              {pending ? "Finalizando…" : "Confirmar e lançar créditos"}
+              {pending ? "Finalizando…" : "Confirmar e finalizar"}
             </button>
             <button type="button" className="btn ghost" onClick={() => ref.current?.close()}>Cancelar</button>
           </div>

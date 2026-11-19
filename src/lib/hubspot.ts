@@ -529,3 +529,92 @@ export async function readContacts(cfg: HubspotConfig, ids: string[]): Promise<M
   }
   return out;
 }
+
+// ---------------------------------------------------------------- Créditos da agência (SPEC 2.3)
+// Igual ao sistema de comissários, mas na Empresa: saldo = "Créditos abertos" (`creditos_abertos`) da empresa;
+// extrato = registros do objeto "Créditos" (objeto padrão Course, 0-410) associados à empresa.
+
+export const CREDITS_OBJECT = "0-410";
+export const CREDIT_PROPS = ["hs_course_name", "tipo_de_movimentacao", "motivo_do_credito", "valor_total_do_credito", "valor_utilizado", "hs_createdate"];
+
+export type HsCredit = {
+  hubspot_id: string;
+  created_on: string;
+  title: string;
+  kind: "acumulo" | "uso";
+  reason: string;
+  // Com sinal: + entra no saldo, − sai. Acúmulo respeita o sinal do "[ACÚMULO] Valor creditado"
+  // (há acúmulos negativos, ex.: estorno); Uso é sempre saída.
+  amount: number;
+};
+
+// Registro do objeto Créditos → linha do extrato (pura, testada).
+export function readCredit(id: string, p: Record<string, string | null | undefined>, createdAt?: string): HsCredit {
+  const tipo = fold(String(p.tipo_de_movimentacao ?? ""));
+  const credited = money(p.valor_total_do_credito);
+  const debited = Math.abs(money(p.valor_utilizado));
+  const kind = tipo === "uso" ? "uso" : tipo === "acumulo" ? "acumulo" : debited > 0 && !credited ? "uso" : "acumulo";
+  return {
+    hubspot_id: id,
+    created_on: String(p.hs_createdate || createdAt || new Date(0).toISOString()),
+    title: String(p.hs_course_name ?? "").trim(),
+    kind,
+    reason: String(p.motivo_do_credito ?? "").trim(),
+    amount: Math.round((kind === "uso" ? -debited : credited) * 100) / 100,
+  };
+}
+
+// Empresa de cada parceiro (pelo nome = afiliado, ignorando acentos e maiúsculas) e o saldo "Créditos abertos".
+export async function partnerCompanies(cfg: HubspotConfig, afiliados: string[]): Promise<Map<string, { id: string; balance: number | null }>> {
+  const out = new Map<string, { id: string; balance: number | null }>();
+  for (const af of afiliados) {
+    const r = await call<{ results: { id: string; properties: Record<string, string | null> }[] }>(cfg, "/crm/v3/objects/companies/search", {
+      filterGroups: [{ filters: [{ propertyName: "name", operator: "EQ", value: af }] }],
+      properties: ["name", "creditos_abertos"],
+      limit: 10,
+    });
+    const c = r.results.find((x) => fold(String(x.properties.name ?? "")) === fold(af));
+    if (!c) continue;
+    const raw = c.properties.creditos_abertos;
+    const n = Number(String(raw ?? "").replace(",", "."));
+    out.set(af, { id: c.id, balance: raw === null || raw === undefined || raw === "" || !Number.isFinite(n) ? null : n });
+  }
+  return out;
+}
+
+// Empresa → registros de Créditos associados
+export async function companyCredits(cfg: HubspotConfig, companyIds: string[]): Promise<Map<string, HsCredit[]>> {
+  const ids = new Map<string, string[]>();
+  for (const part of chunk(companyIds, 100)) {
+    const r = await call<{ results: { from: { id: string }; to: { toObjectId: number | string }[]; paging?: { next?: { after?: string } } }[] }>(
+      cfg,
+      `/crm/v4/associations/companies/${CREDITS_OBJECT}/batch/read`,
+      { inputs: part.map((id) => ({ id })) },
+    );
+    for (const row of r.results) {
+      const list = row.to.map((t) => String(t.toObjectId));
+      let after = row.paging?.next?.after;
+      while (after) {
+        const more = await call<{ results: { toObjectId: number | string }[]; paging?: { next?: { after?: string } } }>(
+          cfg,
+          `/crm/v4/objects/companies/${row.from.id}/associations/${CREDITS_OBJECT}?limit=500&after=${encodeURIComponent(after)}`,
+        );
+        list.push(...more.results.map((t) => String(t.toObjectId)));
+        after = more.paging?.next?.after;
+      }
+      ids.set(String(row.from.id), list);
+    }
+  }
+  const credits = new Map<string, HsCredit>();
+  for (const part of chunk([...new Set([...ids.values()].flat())], 100)) {
+    const r = await call<{ results: { id: string; createdAt?: string; properties: Record<string, string | null> }[] }>(
+      cfg,
+      `/crm/v3/objects/${CREDITS_OBJECT}/batch/read`,
+      { properties: CREDIT_PROPS, inputs: part.map((id) => ({ id })) },
+    );
+    for (const c of r.results) credits.set(c.id, readCredit(c.id, c.properties, c.createdAt));
+  }
+  const out = new Map<string, HsCredit[]>();
+  for (const [company, list] of ids) out.set(company, list.map((id) => credits.get(id)).filter((x): x is HsCredit => !!x));
+  return out;
+}

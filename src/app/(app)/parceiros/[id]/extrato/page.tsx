@@ -20,7 +20,7 @@ export default async function PartnerExtratoPage({
   return (
     <BalanceStatement
       partner={partner}
-      statement={buildStatement(partner, world.entries, world.exps)}
+      statement={buildStatement(partner, world.credits)}
       toRelease={toRelease(partner, world.ledger, world.exps).map((x) => ({ id: x.exp.id, name: x.exp.name, total: x.total }))}
       isVay
       basePath={`/parceiros/${id}/extrato`}

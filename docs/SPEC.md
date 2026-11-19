@@ -1,7 +1,15 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.2 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.3 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.3 — créditos vindos do HubSpot (como no sistema de comissários):**
+
+1. **Saldo atual** = campo **"Créditos abertos"** (`creditos_abertos`) da **Empresa** da agência no HubSpot (empresa com o mesmo nome do parceiro).
+2. **Extrato** = registros do objeto **"Créditos"** (objeto padrão Course, `0-410`) associados à empresa: data (criação), lançamento, motivo e valor. Acúmulo respeita o sinal do "[ACÚMULO] Valor creditado" (há acúmulos negativos, ex.: estorno); Uso é saída. O saldo depois de cada lançamento é calculado de trás para frente a partir do saldo atual. Se o saldo não bater com a soma, a Vay vê a diferença.
+3. Sincronizados a cada sincronização (`credit_entries`, migração 0016; só leitura no sistema). Falha nos créditos não impede a sincronização dos negócios.
+4. **"Finalizar expedição"** passa a registrar o **valor apurado** (congelado em `expeditions.finished_amount`). O crédito é lançado pela equipe no HubSpot (objeto Créditos da empresa) e aparece no extrato na sincronização. Ganho de expedição não finalizada continua como **"a liberar"**.
+5. Lançamentos manuais antigos do sistema (`balance_entries`) deixam de aparecer.
 
 **Mudanças na 2.2 — pendências de lançamento na visão do parceiro:** na tela da expedição, o parceiro vê a seção **"Pendências de lançamento"** com **só os nomes** dos passageiros "A conferir" de negócios marcados como da agência dele no HubSpot (Origem "Agência parceira" + empresa associada; na prática, negócios com mais de um passageiro). Não aparecem: negócios não sinalizados (sem origem ou sem a empresa), passageiros "Conferidos" e quem já está em Passageiros. Feito no banco pela função `partner_pending_names` (migração 0015), que devolve só o nome; a expedição de cada negócio da agência é gravada na sincronização (`deals.matched_expedition_id`).
 

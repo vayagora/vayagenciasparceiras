@@ -13,7 +13,7 @@ export default async function ExtratoPage({ searchParams }: { searchParams: Prom
   return (
     <BalanceStatement
       partner={s.partner}
-      statement={buildStatement(s.partner, world.entries, world.exps)}
+      statement={buildStatement(s.partner, world.credits)}
       toRelease={toRelease(s.partner, world.ledger, world.exps).map((x) => ({ id: x.exp.id, name: x.exp.name, total: x.total }))}
       isVay={false}
       basePath="/extrato"

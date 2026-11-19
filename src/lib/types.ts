@@ -16,6 +16,10 @@ export type Partner = {
   // Acordo próprio no Storage; null = acordo padrão
   agreement_path?: string | null;
   agreement_name?: string | null;
+  // HubSpot (SPEC 2.3): empresa da agência e saldo "Créditos abertos" na última sincronização (null = sem dado)
+  hubspot_company_id?: string | null;
+  credit_balance?: number | null;
+  credit_synced_at?: string | null;
   created_at: string;
 };
 
@@ -32,6 +36,8 @@ export type Expedition = {
   // Fechamento: a Vay confirmou que a expedição aconteceu; os créditos foram lançados no extrato
   finished_at?: string | null;
   finished_by_name?: string;
+  // Valor apurado no fechamento (congelado)
+  finished_amount?: number | null;
   created_at: string;
 };
 
@@ -166,4 +172,16 @@ export type ExpeditionReview = {
   person_name: string;
   reviewed_by_name: string;
   reviewed_at: string;
+};
+
+// Lançamento do extrato: registro do objeto "Créditos" do HubSpot associado à empresa da agência (SPEC 2.3)
+export type CreditEntry = {
+  id: string;
+  partner_id: string;
+  hubspot_id: string;
+  created_on: string;
+  title: string;
+  kind: "acumulo" | "uso";
+  reason: string;
+  amount: number; // com sinal
 };

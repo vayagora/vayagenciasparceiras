@@ -150,6 +150,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0013_somente_leitura.sql"));
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(sql("0015_pendencias_de_lancamento.sql"));
+    await db.query(sql("0016_creditos_hubspot.sql"));
     await db.query(GRANTS);
   });
 
@@ -268,6 +269,23 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(`delete from expedition_reviews`);
     await db.query(`delete from deals where id = $1`, [u.id]);
     await db.query(`update deals set matched_expedition_id = null where id = $1`, [ID.dealA]);
+  });
+
+  it("0016: extrato de créditos do HubSpot: parceiro lê só os próprios e não grava; saldo no próprio parceiro", async () => {
+    await db.query(
+      `insert into credit_entries (partner_id, hubspot_id, created_on, title, kind, amount) values
+        ($1, '600858433313', '2026-10-27', '3Q 2026', 'acumulo', 6808.17), ($2, '777', '2026-10-01', 'Outro', 'acumulo', 50)`,
+      [ID.partnerA, ID.partnerB],
+    );
+    await db.query(`update partners set credit_balance = -1824.91 where id = $1`, [ID.partnerA]);
+    await as(ID.pa, async () => {
+      expect((await rows(`select title from credit_entries`)).map((r) => r.title)).toEqual(["3Q 2026"]);
+      expect(await rows(`select credit_balance::float as b from partners`)).toEqual([{ b: -1824.91 }]);
+      await denied(`insert into credit_entries (partner_id, hubspot_id, created_on, kind, amount) values ($1, 'x', now(), 'acumulo', 1)`, [ID.partnerA]);
+      await expect(db.query(`update partners set credit_balance = 999 where id = $1`, [ID.partnerA])).resolves.toMatchObject({ rowCount: 0 });
+    });
+    expect(await as(ID.vay, () => rows(`select id from credit_entries`))).toHaveLength(2);
+    await db.query(`delete from credit_entries`);
   });
 
   it("parceiro não grava passageiros nem lê o histórico de sincronização", async () => {
@@ -401,6 +419,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0013_somente_leitura.sql"));
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(sql("0015_pendencias_de_lancamento.sql"));
+    await db.query(sql("0016_creditos_hubspot.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

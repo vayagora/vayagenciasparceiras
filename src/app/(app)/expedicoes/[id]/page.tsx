@@ -29,8 +29,7 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
   const st = expStatus(exp);
   const portal = process.env.HUBSPOT_PORTAL_ID ?? "44656712";
   const hsUrl = (hid: string | null) => (isVay && hid ? `https://app.hubspot.com/contacts/${portal}/record/0-3/${hid}` : null);
-  const closing = world.entries.find((e) => e.expedition_id === exp.id);
-  const released = exp.finished_at ? Number(closing?.amount ?? 0) : null;
+  const released = exp.finished_at ? Number(exp.finished_amount ?? 0) : null;
 
   const pd = (r: Resolved, value: number | null): ProductDeal => ({ id: r.deal.id, no: dealNo(r.deal), value, details: r.deal.details ?? {} });
   const won = (rs: Resolved[]) => rs.filter((r) => r.deal.stage_kind === "won");
@@ -136,8 +135,8 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
           value={brl(released ?? t.total)}
           sub={
             exp.finished_at
-              ? `Liberado em ${fmtDate(exp.finished_at.slice(0, 10))}${isVay && exp.finished_by_name ? ` por ${exp.finished_by_name}` : ""}`
-              : "A liberar · entra no saldo quando a Vay Agora finalizar a expedição"
+              ? `Apurado em ${fmtDate(exp.finished_at.slice(0, 10))}${isVay && exp.finished_by_name ? ` por ${exp.finished_by_name}` : ""} · lançado em créditos pela Vay Agora`
+              : "A liberar · vira crédito quando a Vay Agora finalizar a expedição"
           }
         />
         <Kpi label="Em negociação" value={String(t.stages.negociacao ?? 0)} sub={`${t.stages.em_contato ?? 0} em contato · ${t.stages.perdido ?? 0} não compraram`} />

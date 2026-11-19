@@ -104,6 +104,16 @@ Contatos associados ao negócio, com os rótulos de associação da conta:
 - **"Passageiro"** (`HUBSPOT_PASSENGER_LABEL`): quem viaja. Só eles entram na lista de clientes da expedição.
   Sem nenhum rótulo de passageiro no negócio, todos os contatos contam como passageiros.
 
+## Créditos da agência (SPEC 2.3)
+
+| Uso | Onde | Propriedade |
+|---|---|---|
+| Saldo atual | Empresa (`companies`) | `creditos_abertos` ("Créditos abertos") |
+| Lançamentos do extrato | Objeto Créditos (`0-410`, Course renomeado) associado à empresa | `hs_course_name` (lançamento), `tipo_de_movimentacao` (Acúmulo/Uso), `motivo_do_credito`, `valor_total_do_credito` ([ACÚMULO]), `valor_utilizado` ([USO]), `hs_createdate` (data) |
+
+A empresa é achada pelo nome igual ao do parceiro (afiliado), ignorando acentos e maiúsculas.
+Escopo extra necessário: `crm.objects.courses.read` (no sistema de comissários, funcionou com **Service Key**).
+
 ## App privado
 
-Escopos (só leitura): `crm.objects.deals.read`, `crm.objects.contacts.read`, `crm.objects.companies.read`. O token vai em `HUBSPOT_TOKEN` (Vercel › Settings › Environment Variables).
+Escopos (só leitura): `crm.objects.deals.read`, `crm.objects.contacts.read`, `crm.objects.companies.read` e `crm.objects.courses.read` (créditos). O token vai em `HUBSPOT_TOKEN` (Vercel › Settings › Environment Variables).

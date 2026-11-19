@@ -32,8 +32,8 @@ export function BalanceStatement({
           <div className="ttl">
             <h1 className="page-title">Extrato</h1>
             <Tip>
-              Os créditos de cada expedição entram no saldo quando a equipe Vay Agora confirma que ela aconteceu
-              (fechamento da expedição). Até lá, aparecem como “a liberar”.
+              Saldo e lançamentos dos seus créditos na Vay Agora. Os créditos de cada expedição são lançados depois que ela
+              termina e a equipe Vay Agora confirma que aconteceu. Até lá, aparecem como “a liberar”.
             </Tip>
           </div>
         </div>
@@ -43,7 +43,7 @@ export function BalanceStatement({
         <div className="card kpi accent">
           <div className="label">Saldo atual</div>
           <div className="value" style={{ fontSize: 40 }}>{brl(statement.balance)}</div>
-          <div className="sub">{isVay ? "Igual ao que o parceiro vê no portal" : "Entradas menos saídas"}</div>
+          <div className="sub">{isVay ? "“Créditos abertos” da empresa no HubSpot" : "Entradas menos saídas"}</div>
         </div>
         <div className="card kpi">
           <div className="label">Total recebido</div>
@@ -82,6 +82,13 @@ export function BalanceStatement({
             </table>
           </div>
         </section>
+      ) : null}
+
+      {isVay && statement.gap !== 0 ? (
+        <div className="notice" role="status">
+          O saldo do HubSpot difere da soma dos lançamentos em {brl(statement.gap)}. Confira no HubSpot o campo “Créditos abertos”
+          e os registros de Créditos da empresa.
+        </div>
       ) : null}
 
       <section className="card">

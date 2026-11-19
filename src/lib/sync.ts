@@ -1,6 +1,8 @@
 // Sincronização HubSpot → Supabase (idempotente). Roda com a chave service_role, só no servidor.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  companyCredits,
+  partnerCompanies,
   dealCompanies,
   dealContacts,
   hasLabel,
@@ -150,7 +152,7 @@ export function matchesSomeExpedition(row: DealRow, exps: Expedition[], partnerI
 }
 
 export type Skipped = { id: string; reason: string };
-export type SyncResult = { ok: boolean; deals: number; skipped: Skipped[]; unsignaled?: number; error?: string };
+export type SyncResult = { ok: boolean; deals: number; skipped: Skipped[]; unsignaled?: number; credits?: string; error?: string };
 
 export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
   const cfg = hubspotConfig();
@@ -268,8 +270,47 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
     if (keptUnsignaled.length) cleanup = cleanup.not("hubspot_id", "in", `(${keptUnsignaled.join(",")})`);
     const { error: cErr } = await cleanup;
     if (cErr) throw new Error(`limpeza: ${cErr.message}`);
-    return finish({ ok: true, deals: n, skipped, unsignaled: keptUnsignaled.length });
+    // Créditos (saldo e extrato) de cada agência. Falha aqui não desfaz os negócios: só avisa.
+    let credits: string;
+    try {
+      credits = await syncCredits(admin, cfg, (partners ?? []) as { id: string; afiliado: string }[]);
+    } catch (e) {
+      credits = `créditos não atualizados: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    return finish({ ok: true, deals: n, skipped, unsignaled: keptUnsignaled.length, credits });
   } catch (e) {
     return finish({ ok: false, deals: 0, skipped: [], error: e instanceof Error ? e.message : String(e) });
   }
+}
+
+// Saldo ("Créditos abertos" da empresa) e extrato (objeto Créditos) de cada agência, espelhados do HubSpot.
+// Registro apagado ou desassociado no HubSpot some do extrato.
+async function syncCredits(admin: SupabaseClient, cfg: HubspotConfig, partners: { id: string; afiliado: string }[]): Promise<string> {
+  const companies = await partnerCompanies(cfg, partners.map((p) => String(p.afiliado)));
+  const found = partners.filter((p) => companies.has(String(p.afiliado)));
+  const credits = await companyCredits(cfg, found.map((p) => companies.get(String(p.afiliado))!.id));
+  const now = new Date().toISOString();
+  let lines = 0;
+  for (const p of found) {
+    const c = companies.get(String(p.afiliado))!;
+    const list = credits.get(c.id) ?? [];
+    lines += list.length;
+    if (list.length) {
+      const { error } = await admin
+        .from("credit_entries")
+        .upsert(list.map((x) => ({ ...x, partner_id: p.id, synced_at: now })), { onConflict: "hubspot_id" });
+      if (error) throw new Error(`créditos de ${p.afiliado}: ${error.message}`);
+    }
+    let del = admin.from("credit_entries").delete().eq("partner_id", p.id);
+    if (list.length) del = del.not("hubspot_id", "in", `(${list.map((x) => x.hubspot_id).join(",")})`);
+    const { error: dErr } = await del;
+    if (dErr) throw new Error(`créditos de ${p.afiliado}: ${dErr.message}`);
+    const { error: pErr } = await admin
+      .from("partners")
+      .update({ hubspot_company_id: c.id, credit_balance: c.balance, credit_synced_at: now })
+      .eq("id", p.id);
+    if (pErr) throw new Error(`saldo de ${p.afiliado}: ${pErr.message}`);
+  }
+  const missing = partners.length - found.length;
+  return `${lines} lançamentos de crédito` + (missing ? ` · ${missing} parceiro(s) sem empresa com o mesmo nome no HubSpot` : "");
 }

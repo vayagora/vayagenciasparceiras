@@ -27,7 +27,7 @@ export function ExpeditionList({
   const done = exps.filter(isDone).sort((a, b) => (expEnd(a) < expEnd(b) ? 1 : -1));
   // Expedição finalizada: vale o valor congelado no fechamento (extrato); senão, o ganho atual (a liberar)
   const earned = (e: Expedition) =>
-    e.finished_at ? Number(world.entries.find((x) => x.expedition_id === e.id)?.amount ?? 0) : world.ledger.earnings(e.id).total;
+    e.finished_at ? Number(e.finished_amount ?? 0) : world.ledger.earnings(e.id).total;
   const doneTotal = done.reduce((a, e) => a + earned(e), 0);
   const partnerName = (e: Expedition) => world.partners.find((p) => p.id === e.partner_id)?.name ?? "";
 
@@ -57,7 +57,7 @@ export function ExpeditionList({
           <span className="small muted">{isVay ? "Comissão do parceiro" : "Seus ganhos (total)"}</span>
           <span className="display" style={{ fontSize: 18, color: "var(--text-strong)" }}>{brl(earned(e))}</span>
           {earned(e) > 0 || e.finished_at ? (
-            <span className={`small ${e.finished_at ? "highlight" : "muted"}`}>{e.finished_at ? "Créditos liberados" : "A liberar"}</span>
+            <span className={`small ${e.finished_at ? "highlight" : "muted"}`}>{e.finished_at ? "Apurado" : "A liberar"}</span>
           ) : null}
         </span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--text-muted)", flex: "none" }}>
