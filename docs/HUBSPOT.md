@@ -6,7 +6,7 @@ Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócio
 
 - **Qualquer etapa** do funil: em aberto (`HUBSPOT_OPEN_STAGES`), ganho (`HUBSPOT_WON_STAGES`, padrão `135525686` = "Emissão Realizada")
   e perdido (`HUBSPOT_LOST_STAGES`, padrão `closedlost`). Só o ganho remunera; os outros dão a etapa do cliente.
-- **Origem do Negócio** = "Agência Parceira" ou "Afiliado" (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`, lista separada por vírgula;
+- **Origem do Negócio** = "Agências Parceiras", "Agência Parceira" ou "Afiliado" (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`, lista separada por vírgula;
   ignora acentos e maiúsculas).
 - A **agência é a Empresa associada ao negócio**. O nome da empresa no HubSpot precisa ser igual ao nome
   (afiliado) do parceiro no sistema, ignorando acentos e maiúsculas (ex.: "JT Viajar e Correr").
@@ -74,6 +74,11 @@ e da base OpenFlights). Aeroporto a até 60 km de uma cidade da lista de destino
 
 Limitação: no seguro e na hospedagem, o destino é texto livre. Se estiver escrito como país ("Tailândia"),
 não casa com a cidade da expedição.
+
+## Um passageiro por negócio (SPEC 2.1)
+
+Só negócios da agência com **um** passageiro entram direto na lista da expedição. Negócio com vários passageiros vai para
+"A conferir": separe no HubSpot em um negócio por passageiro e sincronize.
 
 ## Etapa do cliente e observação (SPEC 2.0)
 

@@ -12,7 +12,9 @@ const deal = (id: string, voo: number, afiliado = "JT Viajar e Correr", over: Pa
   details: {}, payment_methods: [], cashback_override: null, afiliado, closed_on: "2026-10-09",
   legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16",
   voo, hotel: 0, seguro: 0, override_expedition_id: null, override_none: false, reviewed: false,
-  passenger_count: 1, titular_labeled: true, passengers: [], ...over,
+  passenger_count: 1, titular_labeled: true,
+  passengers: [{ id: `px${id}`, deal_id: id, hubspot_contact_id: `c${id}`, name: `Pax ${id}`, email: "", phone: "", is_titular: true, is_buyer: true, is_passenger: true, first_seen_at: "", position: 0 }],
+  ...over,
 });
 const entry = (id: string, kind: "in" | "out", amount: number, date: string, over: Partial<BalanceEntry> = {}): BalanceEntry => ({
   id, partner_id: "pJT", kind, amount, entry_date: date, title: kind === "in" ? "Bonificação" : "Passagem da guia", note: "", created_by_name: "Gabriel", created_at: "", ...over,

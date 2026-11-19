@@ -1,10 +1,12 @@
-// Consolidação dos negócios por expedição e por cliente (SPEC 2.0).
-// A lista de clientes de cada expedição são os passageiros dos negócios da agência vinculados a ela
-// (qualquer etapa no HubSpot). Não há lista cadastrada no sistema.
+// Consolidação dos negócios por expedição e por cliente (SPEC 2.1).
+// "Passageiros" de cada expedição = passageiros dos negócios da agência (origem + empresa) com UM passageiro,
+// vinculados a ela por destino e data (qualquer etapa no HubSpot). Só a sincronização põe alguém aqui.
+// "A conferir" = passageiros de negócios da agência com mais de um passageiro e de negócios não sinalizados que
+// combinam com a expedição; a Vay pode marcá-los como "Conferidos". Quem já está em Passageiros não volta a conferir.
 // Valores e comissão são do negócio: entram uma única vez, na linha principal (titular), e todo total soma por negócio.
 import { addMoney, bestStage, dealStage, PRODUCTS, ZERO, type Money, type Product } from "./commission";
 import { foldName, resolveDeals, travellers, type Resolved, type Tolerances } from "./matching";
-import type { Deal, Expedition, Partner, Passenger, StageId } from "./types";
+import type { Deal, Expedition, ExpeditionReview, Partner, Passenger, StageId } from "./types";
 
 export type ExpStats = Money & {
   // Pessoas na lista
@@ -39,6 +41,22 @@ export type ClientLine = {
   note: string;
 };
 
+// Pessoa na conferência (A conferir / Conferidos)
+export type ReviewPerson = {
+  key: string;
+  name: string;
+  email: string;
+  // Negócios desta pessoa que pedem conferência nesta expedição
+  deals: Resolved[];
+  // Por que está aqui: vários passageiros no negócio e/ou não sinalizado no HubSpot
+  reasons: ("varios" | "nao_sinalizado")[];
+  // Marcação da Vay (só em Conferidos)
+  review: ExpeditionReview | null;
+};
+
+// Negócio que vai direto para a lista: sinalizado e com um passageiro (que viaja)
+export const isListDeal = (d: Deal) => d.signaled !== false && travellers(d).length === 1;
+
 // Mesma pessoa em negócios diferentes: contato do HubSpot; sem ele, nome completo.
 export const personKey = (p: Pick<Passenger, "hubspot_contact_id" | "name">) =>
   p.hubspot_contact_id ? `c:${p.hubspot_contact_id}` : `n:${foldName(p.name)}`;
@@ -51,9 +69,13 @@ export class Ledger {
   // Negócios que remuneram: ganhos e vinculados a uma expedição
   readonly paid: Resolved[];
 
-  constructor(deals: Deal[], partners: Partner[], exps: Expedition[], tol?: Tolerances) {
+  private reviews: ExpeditionReview[];
+
+  constructor(deals: Deal[], partners: Partner[], exps: Expedition[], reviews: ExpeditionReview[] = [], tol?: Tolerances) {
     this.resolved = resolveDeals(deals, partners, exps, tol);
-    this.paid = this.resolved.filter((r) => r.exp && r.deal.stage_kind === "won");
+    this.reviews = reviews;
+    // Só remunera o que está na lista: negócio ganho, sinalizado, com um passageiro e vinculado
+    this.paid = this.resolved.filter((r) => r.exp && r.deal.stage_kind === "won" && isListDeal(r.deal));
   }
 
   // Negócios ganhos da expedição (os que remuneram)
@@ -61,9 +83,36 @@ export class Ledger {
     return this.paid.filter((r) => r.exp!.id === expId);
   }
 
-  // Todos os negócios da agência vinculados à expedição, em qualquer etapa
+  // Negócios da lista da expedição (sinalizados, um passageiro), em qualquer etapa
   allForExp(expId: string): Resolved[] {
-    return this.resolved.filter((r) => r.exp?.id === expId);
+    return this.resolved.filter((r) => r.exp?.id === expId && isListDeal(r.deal));
+  }
+
+  // Conferência da expedição (só Vay): quem está em "A conferir" e quem já foi marcado como "Conferido".
+  // Quem já está em Passageiros não aparece aqui, mesmo que esteja em outro negócio a conferir.
+  reviewQueue(e: Expedition): { pending: ReviewPerson[]; done: ReviewPerson[] } {
+    const listed = new Set(this.lines(e).map((l) => l.key));
+    const deals = this.resolved.filter(
+      (r) => (r.exp?.id === e.id && r.deal.signaled !== false && !isListDeal(r.deal)) || r.suggested?.id === e.id,
+    );
+    const byKey = new Map<string, ReviewPerson>();
+    for (const r of deals) {
+      const reason = r.deal.signaled === false ? "nao_sinalizado" : "varios";
+      const ps = travellers(r.deal);
+      // Negócio sem passageiros: entra como uma linha própria
+      const people = ps.length ? ps.map((p) => ({ key: personKey(p), name: p.name, email: p.email })) : [{ key: `d:${r.deal.id}`, name: "Negócio sem passageiros", email: "" }];
+      for (const p of people) {
+        if (listed.has(p.key)) continue;
+        const cur = byKey.get(p.key) ?? { ...p, deals: [], reasons: [], review: null };
+        if (!cur.deals.includes(r)) cur.deals.push(r);
+        if (!cur.reasons.includes(reason)) cur.reasons.push(reason);
+        byKey.set(p.key, cur);
+      }
+    }
+    const marks = new Map(this.reviews.filter((x) => x.expedition_id === e.id).map((x) => [x.person_key, x]));
+    const all = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    for (const p of all) p.review = marks.get(p.key) ?? null;
+    return { pending: all.filter((p) => !p.review), done: all.filter((p) => p.review) };
   }
 
   // Ganho da expedição (soma por negócio)
@@ -138,13 +187,9 @@ export class Ledger {
     return t;
   }
 
-  // Pendências (corrigir no HubSpot): não sinalizados desta expedição e negócios do parceiro sem expedição.
+  // Pendências da expedição: pessoas em "A conferir"
   pendingFor(e: Expedition): number {
-    return this.resolved.filter(
-      (r) =>
-        r.needsReview &&
-        (r.suggested ? r.suggested.id === e.id : !r.exp && r.deal.signaled !== false && r.partner?.id === e.partner_id),
-    ).length;
+    return this.reviewQueue(e).pending.length;
   }
 
   // Negócios encontrados por destino e data para a expedição, mas não sinalizados no HubSpot (só Vay).

@@ -33,10 +33,13 @@ export default async function OverviewPage() {
   const negotiating = allStats.reduce((a, t) => a + (t.stages.negociacao ?? 0) + (t.stages.em_contato ?? 0), 0);
   // Expedições que já terminaram e esperam a Vay confirmar (fechamento libera os créditos)
   const toFinish = exps.filter((e) => isDone(e) && !e.finished_at);
-  const flagCount = ledger.resolved.filter((r) => r.needsReview).length;
   const pendingExps = exps
     .map((e) => ({ e, n: ledger.pendingFor(e) }))
     .filter((x) => x.n > 0);
+  const toReview = pendingExps.reduce((a, x) => a + x.n, 0);
+  // Negócios da agência (sinalizados) sem expedição compatível: corrigir datas/destino no HubSpot ou criar a expedição
+  const noExp = partners.flatMap((p) => ledger.withoutExpedition(p.id));
+  const portal = process.env.HUBSPOT_PORTAL_ID ?? "44656712";
 
   const partnerRows = partners.map((p) => {
     const ex = exps.filter((e) => e.partner_id === p.id);
@@ -81,17 +84,33 @@ export default async function OverviewPage() {
         </section>
       ) : null}
 
-      {flagCount > 0 ? (
-        <section className="card pad stack" style={{ borderColor: "var(--red-300)", background: "var(--red-50)" }}>
+      {toReview > 0 ? (
+        <section className="card pad stack" style={{ borderColor: "var(--yellow-300)", background: "var(--yellow-50)" }}>
           <div className="ttl">
-            <h2 className="section-title">{plural(flagCount, "negócio para corrigir no HubSpot", "negócios para corrigir no HubSpot")}</h2>
-            <Tip>Negócios não sinalizados como de agência parceira, ou da agência mas sem expedição compatível. Corrigidos no HubSpot, saem desta lista na próxima sincronização.</Tip>
+            <h2 className="section-title">{plural(toReview, "passageiro a conferir", "passageiros a conferir")}</h2>
+            <Tip>Passageiros de negócios com vários passageiros ou não sinalizados no HubSpot, com destino e datas de uma expedição. Corrija no HubSpot (vão para Passageiros na próxima sincronização) ou marque como conferido.</Tip>
           </div>
           <div className="row">
             {pendingExps.map(({ e, n }) => (
-              <Link key={e.id} href={`/expedicoes/${e.id}#negocios`} className="btn outline sm">
-                {e.name} · {partnerById.get(e.partner_id)?.name} · {n} para corrigir
+              <Link key={e.id} href={`/expedicoes/${e.id}?aba=conferir`} className="btn outline sm">
+                {e.name} · {partnerById.get(e.partner_id)?.name} · {n} a conferir
               </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {noExp.length > 0 ? (
+        <section className="card pad stack" style={{ borderColor: "var(--red-300)", background: "var(--red-50)" }}>
+          <div className="ttl">
+            <h2 className="section-title">{plural(noExp.length, "negócio da agência sem expedição", "negócios da agência sem expedição")}</h2>
+            <Tip>Negócios marcados como de agência parceira no HubSpot cujo destino e datas não combinam com nenhuma expedição do parceiro. Corrija o roteiro no HubSpot ou crie a expedição.</Tip>
+          </div>
+          <div className="row">
+            {noExp.map((r) => (
+              <a key={r.deal.id} href={r.deal.hubspot_id ? `https://app.hubspot.com/contacts/${portal}/record/0-3/${r.deal.hubspot_id}` : undefined} target="_blank" rel="noreferrer" className="btn outline sm">
+                {r.deal.name || `#${r.deal.hubspot_id}`} · {r.partner?.name}
+              </a>
             ))}
           </div>
         </section>

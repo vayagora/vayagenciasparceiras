@@ -114,6 +114,31 @@ export async function finishExpedition(expId: string): Promise<FormState> {
   return { ok: total > 0 ? "Expedição finalizada e créditos lançados no extrato." : "Expedição finalizada (sem créditos a lançar)." };
 }
 
+// ---------------------------------------------------------------- Conferência (SPEC 2.1)
+
+// A Vay só alterna entre "A conferir" e "Conferido". "Passageiros" é preenchido apenas pela sincronização.
+export async function setPersonReviewed(expId: string, personKey: string, personName: string, reviewed: boolean): Promise<FormState> {
+  const s = await requireVay();
+  if (!/^(c|n|d):.+/.test(personKey)) return { error: "Passageiro inválido." };
+  const supabase = await createClient();
+  const { error } = reviewed
+    ? await supabase.from("expedition_reviews").upsert(
+        {
+          expedition_id: expId,
+          person_key: personKey,
+          person_name: personName.slice(0, 200),
+          reviewed_by: s.profile.id,
+          reviewed_by_name: s.profile.full_name || s.profile.email,
+          reviewed_at: new Date().toISOString(),
+        },
+        { onConflict: "expedition_id,person_key" },
+      )
+    : await supabase.from("expedition_reviews").delete().eq("expedition_id", expId).eq("person_key", personKey);
+  if (error) return { error: "Não foi possível salvar a conferência." };
+  revalidatePath("/", "layout");
+  return { ok: reviewed ? "Marcado como conferido." : "Voltou para a conferir." };
+}
+
 // Sincronização sob demanda (a agendada usa /api/cron/sync).
 export async function syncNow(): Promise<FormState> {
   await requireVay();

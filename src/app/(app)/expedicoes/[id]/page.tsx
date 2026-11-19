@@ -2,22 +2,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { dealStage, expEnd, expStatus, isDone, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
-import { dealNo, PENDING, RULE_TIP, sortPassengers, type Resolved } from "@/lib/matching";
+import { dealNo, RULE_TIP, type Resolved } from "@/lib/matching";
+import type { ReviewPerson } from "@/lib/ledger";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
 import { airportLabel } from "@/components/AirportOptions";
 import { FinishExpedition } from "./forms";
 import { ClientsTable, type TableRow } from "./ClientsTable";
-import { DealGroups } from "./DealGroups";
-import type { DealView } from "./DealRow";
+import { ReviewTable, type ReviewRow } from "./ReviewTable";
 import type { ProductDeal } from "./ProductCell";
 
 export const metadata = { title: "Expedição" };
 
-export default async function ExpeditionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ExpeditionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ aba?: string }> }) {
   const s = await requireSession();
-  const [{ id }, world] = await Promise.all([params, loadWorld()]);
+  const [{ id }, sp, world] = await Promise.all([params, searchParams, loadWorld()]);
   const exp = world.exps.find((e) => e.id === id);
   if (!exp) notFound();
 
@@ -53,55 +53,41 @@ export default async function ExpeditionPage({ params }: { params: Promise<{ id:
     };
   });
 
-  const expDeals = isVay
-    ? ledger.resolved.filter(
-        (r) => r.deal.signaled !== false && ((r.exp && r.exp.id === exp.id) || (!r.exp && r.needsReview && r.partner?.id === exp.partner_id)),
-      )
-    : [];
-  const pending = isVay ? ledger.pendingFor(exp) : 0;
-  const unsignaled = isVay ? ledger.unsignaledFor(exp) : [];
-
-  const productsOf = (d: Resolved["deal"]) =>
-    PRODUCTS.filter((k) => d[k] > 0).map((k) => `${k === "voo" ? "Voo" : k === "hotel" ? "Hospedagem" : "Seguro"} ${brl(d[k])}`).join(" · ") || "—";
-  const view = (r: Resolved): DealView => {
-    const d = r.deal;
-    const unsig = d.signaled === false;
-    const legs = d.legs;
-    const sg = stageOf(dealStage(d));
-    const others = r.candIds.slice(1).map((cid) => world.exps.find((e) => e.id === cid)?.name).filter(Boolean);
-    return {
-      id: d.id,
-      no: dealNo(d),
-      name: d.name,
-      hubspotUrl: hsUrl(d.hubspot_id),
-      stage: { label: sg.label, tone: sg.tone },
-      flags: r.flags.map((f) => ({ key: f.key, label: f.label, tone: f.tone, pending: PENDING.includes(f.key) })),
-      needsReview: r.needsReview,
-      passengers: sortPassengers(d.passengers).map((p) => ({
-        id: p.id,
-        name: p.name,
-        strong: p.is_titular,
-        note: p.is_buyer && !p.is_passenger ? "comprador, não viaja" : p.is_buyer ? "comprador" : p.is_titular ? "titular" : "",
-      })),
-      routeShort: legs.length ? `${legs[0].city} → ${legs[legs.length - 1].city} · ${dm(legs[0].date)}–${dm(d.end_date)}` : "",
-      route: `${legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta ${fmtDate(d.end_date)}`,
-      closedOn: d.closed_on ? fmtDate(d.closed_on) : "",
-      products: productsOf(d),
-      payment: d.payment_methods.length ? d.payment_methods.join(" + ") : "não informado no HubSpot",
-      reason: r.reason + (others.length ? ` Outras expedições compatíveis: ${others.join(", ")}.` : ""),
-      com: unsig ? r.potential.total : r.com.total,
-      comLabel: unsig
-        ? "Comissão se for sinalizado"
-        : d.stage_kind !== "won"
-          ? "Ainda não comprou"
-          : r.exp
-            ? r.flags.some((f) => f.key === "misto")
-              ? "Cashback a definir"
-              : "Cashback do parceiro"
-            : "Sem expedição · não remunera",
-      fixes: unsig ? r.fixes : undefined,
-    };
-  };
+  // Conferência (só Vay): abas A conferir / Conferidos
+  const queue = isVay ? ledger.reviewQueue(exp) : { pending: [], done: [] };
+  const tab = isVay && (sp.aba === "conferir" || sp.aba === "conferidos") ? sp.aba : "passageiros";
+  const routeOf = (d: Resolved["deal"]) =>
+    d.legs.length ? `${d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta ${fmtDate(d.end_date)}` : "";
+  const reviewRow = (p: ReviewPerson): ReviewRow => ({
+    key: p.key,
+    name: p.name,
+    email: p.email,
+    reasons: p.reasons.map((x) =>
+      x === "varios"
+        ? { label: "Vários passageiros no negócio", tone: "yellow" as const }
+        : { label: "Não sinalizado no HubSpot", tone: "red" as const },
+    ),
+    deals: p.deals.map((r) => ({
+      no: dealNo(r.deal),
+      url: hsUrl(r.deal.hubspot_id),
+      stage: stageOf(dealStage(r.deal)).label,
+      route: routeOf(r.deal),
+      fix:
+        r.deal.signaled === false
+          ? r.fixes.length
+            ? `${dealNo(r.deal)}: ${r.fixes.join("; ")}.`
+            : `${dealNo(r.deal)}: confira a origem e a empresa associada.`
+          : `${dealNo(r.deal)}: deixar um passageiro por negócio (${r.deal.passengers.filter((x) => x.is_passenger !== false).length} hoje).`,
+    })),
+    reviewed: p.review
+      ? `Conferido${p.review.reviewed_by_name ? ` por ${p.review.reviewed_by_name}` : ""} em ${fmtDate(p.review.reviewed_at.slice(0, 10))}`
+      : null,
+  });
+  const tabs: [string, string, number][] = [
+    ["passageiros", "Passageiros", t.n],
+    ["conferir", "A conferir", queue.pending.length],
+    ["conferidos", "Conferidos", queue.done.length],
+  ];
 
   return (
     <>
@@ -149,51 +135,63 @@ export default async function ExpeditionPage({ params }: { params: Promise<{ id:
         <Kpi label="Em negociação" value={String(t.stages.negociacao ?? 0)} sub={`${t.stages.em_contato ?? 0} em contato · ${t.stages.perdido ?? 0} não compraram`} />
       </div>
 
-      <section className="card">
-        <div className="card-head">
-          <div className="ttl">
-            <h2 className="section-title">Clientes da expedição</h2>
-            <Tip>
-              Passageiros dos negócios da agência no HubSpot com destino e datas desta expedição. A etapa vem da etapa do
-              negócio e a observação, do campo “Observações para parceiro”. Para corrigir qualquer dado, altere no HubSpot.
-            </Tip>
-          </div>
-        </div>
-        <ClientsTable
-          rows={tableRows}
-          earnHeader={isVay ? "Comissão" : "Seu ganho"}
-          stageOptions={STAGES.map((x) => ({ value: x.id, label: x.label }))}
-          expName={exp.name}
-          emptyText="Nenhum negócio da agência no HubSpot para esta expedição ainda."
-        />
-      </section>
-
       {isVay ? (
-        <section className="card pad stack" id="negocios">
-          <div className="ttl">
-            <h2 className="section-title">Negócios do HubSpot</h2>
-            <Tip>{RULE_TIP}</Tip>
-            {pending ? <Badge tone="red">{pending} para corrigir no HubSpot</Badge> : null}
-          </div>
-          {expDeals.length === 0 ? <p className="muted">Nenhum negócio do HubSpot vinculado a esta expedição ainda.</p> : null}
-          <DealGroups views={expDeals.map((r) => view(r))} pendingTitle="Corrigir no HubSpot" restTitle="Negócios vinculados" />
-        </section>
+        <nav className="row" role="tablist" aria-label="Seções da expedição" style={{ gap: 8 }}>
+          {tabs.map(([key, label, n]) => (
+            <Link
+              key={key}
+              href={key === "passageiros" ? `/expedicoes/${exp.id}` : `/expedicoes/${exp.id}?aba=${key}`}
+              role="tab"
+              aria-selected={tab === key}
+              className={`btn sm ${tab === key ? "secondary" : "outline"}`}
+            >
+              {label} <span className={`badge ${key === "conferir" && n ? "red" : "neutral"}`}>{n}</span>
+            </Link>
+          ))}
+          <Tip>{RULE_TIP}</Tip>
+        </nav>
       ) : null}
 
-      {isVay && unsignaled.length ? (
-        <section className="card pad stack" id="nao-sinalizados" style={{ borderColor: "var(--red-300)" }}>
-          <div className="ttl">
-            <h2 className="section-title">Encontrados, mas não sinalizados no HubSpot</h2>
-            <Tip>
-              Negócios ganhos ou em aberto com destino e datas compatíveis com esta expedição, mas sem a marcação de agência
-              parceira no HubSpot (Origem do Negócio + empresa associada). Não aparecem para o parceiro e não geram comissão.
-              Corrigidos no HubSpot, passam para a lista acima na próxima sincronização. Só a equipe Vay Agora vê esta seção.
-            </Tip>
-            <Badge tone="red">{unsignaled.length}</Badge>
+      {tab === "passageiros" ? (
+        <section className="card">
+          <div className="card-head">
+            <div className="ttl">
+              <h2 className="section-title">{isVay ? "Passageiros" : "Clientes da expedição"}</h2>
+              <Tip>
+                Passageiros dos negócios da agência no HubSpot (Origem do Negócio + empresa associada, um passageiro por
+                negócio) com destino e datas desta expedição. A etapa vem da etapa do negócio e a observação, do campo
+                “Observações para parceiro”. Para corrigir qualquer dado, altere no HubSpot.
+              </Tip>
+            </div>
           </div>
-          <DealGroups views={unsignaled.map((r) => view(r))} pendingTitle="Corrigir no HubSpot" restTitle="Outros" />
+          <ClientsTable
+            rows={tableRows}
+            earnHeader={isVay ? "Comissão" : "Seu ganho"}
+            stageOptions={STAGES.map((x) => ({ value: x.id, label: x.label }))}
+            expName={exp.name}
+            emptyText="Nenhum negócio da agência no HubSpot para esta expedição ainda."
+          />
         </section>
-      ) : null}
+      ) : (
+        <section className="card">
+          <div className="card-head">
+            <div className="ttl">
+              <h2 className="section-title">{tab === "conferir" ? "A conferir" : "Conferidos"}</h2>
+              <Tip>
+                {tab === "conferir"
+                  ? "Passageiros de negócios com destino e datas desta expedição que não vão direto para a lista: negócio da agência com mais de um passageiro, ou negócio não sinalizado no HubSpot. Se for erro no HubSpot, corrija lá: na próxima sincronização o passageiro vai para Passageiros. Se não for cliente desta expedição, marque como conferido."
+                  : "Passageiros que a Vay já conferiu e que não são da lista desta expedição. Eles não voltam para “A conferir” nas próximas sincronizações."}
+              </Tip>
+            </div>
+          </div>
+          <ReviewTable
+            expId={exp.id}
+            rows={(tab === "conferir" ? queue.pending : queue.done).map(reviewRow)}
+            done={tab === "conferidos"}
+            emptyText={tab === "conferir" ? "Nada para conferir nesta expedição." : "Nenhum passageiro conferido ainda."}
+          />
+        </section>
+      )}
     </>
   );
 }

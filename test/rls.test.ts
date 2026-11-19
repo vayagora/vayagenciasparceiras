@@ -148,6 +148,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(sql("0012_conferencia.sql"));
     await db.query(sql("0013_somente_leitura.sql"));
+    await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(GRANTS);
   });
 
@@ -172,9 +173,28 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     ]);
   });
 
-  it("0013: parceiro lê todos os passageiros dos negócios da própria agência (não há mais lista cadastrada)", async () => {
-    const ps = await as(ID.pa, () => rows(`select name from deal_passengers order by name`));
-    expect(ps.map((p) => p.name)).toEqual(["Ana Ribeiro", "Emerson Souza", "Gislaine Souza"]);
+  it("0014: parceiro só vê negócios da própria agência com um passageiro (o do casal fica com a Vay, a conferir)", async () => {
+    await as(ID.pa, async () => {
+      expect((await rows(`select name from deal_passengers order by name`)).map((p) => p.name)).toEqual(["Ana Ribeiro"]);
+      expect(await rows(`select id from deals where id = $1`, [ID.dealA])).toEqual([]);
+    });
+    expect(await as(ID.vay, () => rows(`select id from deals where id = $1`, [ID.dealA]))).toHaveLength(1);
+  });
+
+  it("0014: conferência por passageiro é só da Vay; uma marcação por pessoa na expedição", async () => {
+    await as(ID.pa, async () => {
+      await denied(`insert into expedition_reviews (expedition_id, person_key, person_name) values ($1, 'c:902', 'Gislaine')`, [ID.expA]);
+    });
+    await as(ID.vay, async () => {
+      await db.query(`insert into expedition_reviews (expedition_id, person_key, person_name, reviewed_by_name) values ($1, 'c:902', 'Gislaine', 'Ana')`, [ID.expA]);
+      expect(await rows(`select person_name from expedition_reviews`)).toEqual([{ person_name: "Gislaine" }]);
+      await db.query("savepoint s");
+      await expect(db.query(`insert into expedition_reviews (expedition_id, person_key) values ($1, 'c:902')`, [ID.expA])).rejects.toThrow(/unique|duplicate/);
+      await db.query("rollback to savepoint s");
+    });
+    await db.query(`insert into expedition_reviews (expedition_id, person_key, person_name) values ($1, 'c:902', 'Gislaine')`, [ID.expA]);
+    expect(await as(ID.pa, () => rows(`select id from expedition_reviews`))).toEqual([]);
+    await db.query(`delete from expedition_reviews`);
   });
 
   it("parceiro A não lê nada do parceiro B (negócios, passageiros, expedições)", async () => {
@@ -195,6 +215,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
       `insert into deals (hubspot_id, afiliado, closed_on, hs_stage, stage_kind, partner_note, legs, end_date)
        values ('9200', 'Horizonte Eventos', null, 'presentationscheduled', 'open', 'Cotando', '[{"city":"Madrid","date":"2026-11-12"}]', '2026-11-19') returning id`,
     );
+    await db.query(`insert into deal_passengers (deal_id, hubspot_contact_id, name, is_titular) values ($1, '9201', 'Claudia', true)`, [d.id]);
     await fails(`update deals set stage_kind = 'outro' where id = $1`, [d.id], /check/);
     expect(await as(ID.pa, () => rows(`select partner_note from deals where id = $1`, [d.id]))).toEqual([{ partner_note: "Cotando" }]);
     await db.query(`delete from deals where id = $1`, [d.id]);
@@ -267,20 +288,20 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
   });
 
   it("comentários e arquivos: parceiro vê só os dos próprios negócios; só a Vay grava", async () => {
-    await db.query(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'Bilhete A'), ($2, 'voo', 'Bilhete B')`, [ID.dealA, ID.dealB]);
+    await db.query(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'Bilhete A'), ($2, 'voo', 'Bilhete B')`, [ID.legacy, ID.dealB]);
     await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1), ('anexos', $2), ('anexos', 'nao-e-uuid/voo/x.pdf')`, [
-      `${ID.dealA}/voo/a.pdf`,
+      `${ID.legacy}/voo/a.pdf`,
       `${ID.dealB}/voo/b.pdf`,
     ]);
     await as(ID.pa, async () => {
       expect((await rows(`select body from deal_notes`)).map((r) => r.body)).toEqual(["Bilhete A"]);
-      expect((await rows(`select name from storage.objects`)).map((r) => r.name)).toEqual([`${ID.dealA}/voo/a.pdf`]);
-      await denied(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'x')`, [ID.dealA]);
-      await denied(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.dealA}/voo/c.pdf`]);
+      expect((await rows(`select name from storage.objects`)).map((r) => r.name)).toEqual([`${ID.legacy}/voo/a.pdf`]);
+      await denied(`insert into deal_notes (deal_id, product, body) values ($1, 'voo', 'x')`, [ID.legacy]);
+      await denied(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.legacy}/voo/c.pdf`]);
     });
     await as(ID.vay, async () => {
       expect(await rows(`select name from storage.objects`)).toHaveLength(3);
-      await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.dealA}/voo/d.pdf`]);
+      await db.query(`insert into storage.objects (bucket_id, name) values ('anexos', $1)`, [`${ID.legacy}/voo/d.pdf`]);
     });
   });
 
@@ -298,13 +319,13 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
   });
 
   it("histórico do cashback: só a Vay lê e grava; o parceiro vê só o valor final do próprio negócio", async () => {
-    await db.query(`update deals set cashback_override = 120, payment_methods = '{"Crédito na VAY","Pix/Ted/Doc"}' where id = $1`, [ID.dealA]);
-    await db.query(`insert into deal_cashback_history (deal_id, old_value, new_value, calculated, note) values ($1, null, 120, 0, 'misto')`, [ID.dealA]);
+    await db.query(`update deals set cashback_override = 120, payment_methods = '{"Crédito na VAY","Pix/Ted/Doc"}' where id = $1`, [ID.legacy]);
+    await db.query(`insert into deal_cashback_history (deal_id, old_value, new_value, calculated, note) values ($1, null, 120, 0, 'misto')`, [ID.legacy]);
     await as(ID.pa, async () => {
       expect(await rows(`select id from deal_cashback_history`)).toEqual([]);
-      await denied(`insert into deal_cashback_history (deal_id, new_value, calculated) values ($1, 999, 0)`, [ID.dealA]);
-      expect(await rows(`select cashback_override::float as v from deals where id = $1`, [ID.dealA])).toEqual([{ v: 120 }]);
-      await expect(db.query(`update deals set cashback_override = 999 where id = $1`, [ID.dealA])).resolves.toMatchObject({ rowCount: 0 });
+      await denied(`insert into deal_cashback_history (deal_id, new_value, calculated) values ($1, 999, 0)`, [ID.legacy]);
+      expect(await rows(`select cashback_override::float as v from deals where id = $1`, [ID.legacy])).toEqual([{ v: 120 }]);
+      await expect(db.query(`update deals set cashback_override = 999 where id = $1`, [ID.legacy])).resolves.toMatchObject({ rowCount: 0 });
     });
     expect(await as(ID.vay, () => rows(`select note from deal_cashback_history`))).toEqual([{ note: "misto" }]);
   });
@@ -352,6 +373,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0011_comprador_passageiro.sql"));
     await db.query(sql("0012_conferencia.sql"));
     await db.query(sql("0013_somente_leitura.sql"));
+    await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);

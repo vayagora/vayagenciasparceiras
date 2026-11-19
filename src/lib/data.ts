@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { Ledger } from "./ledger";
 import { createClient } from "./supabase/server";
-import type { BalanceEntry, Deal, Expedition, Partner, Passenger, Profile } from "./types";
+import type { BalanceEntry, Deal, Expedition, ExpeditionReview, Partner, Passenger, Profile } from "./types";
 
 export type Session = {
   profile: Profile;
@@ -53,21 +53,24 @@ export type World = {
   exps: Expedition[];
   deals: Deal[];
   entries: BalanceEntry[];
+  reviews: ExpeditionReview[];
   ledger: Ledger;
 };
 
 // Carrega tudo o que o usuário pode ver (as regras de acesso do banco já filtram por parceiro).
 export const loadWorld = cache(async (): Promise<World> => {
   const supabase = await createClient();
-  const [partners, exps, deals, passengers, entries] = await Promise.all([
+  const [partners, exps, deals, passengers, entries, reviews] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("deals").select("*").order("closed_on", { ascending: false, nullsFirst: false }),
     // O parceiro recebe os passageiros dos negócios da própria agência (RLS).
     supabase.from("deal_passengers").select("*").order("position"),
     supabase.from("balance_entries").select("*").order("entry_date"),
+    // Conferência: só a Vay recebe linhas (RLS); para o parceiro vem vazio
+    supabase.from("expedition_reviews").select("*"),
   ]);
-  for (const r of [partners, exps, deals, passengers, entries]) {
+  for (const r of [partners, exps, deals, passengers, entries, reviews]) {
     if (r.error) throw new Error(r.error.message);
   }
   const byDeal = new Map<string, Passenger[]>();
@@ -91,6 +94,7 @@ export const loadWorld = cache(async (): Promise<World> => {
       cashback_override: d.cashback_override === null || d.cashback_override === undefined ? null : Number(d.cashback_override),
     })),
     entries: ((entries.data ?? []) as BalanceEntry[]).map((e) => ({ ...e, amount: Number(e.amount) })),
+    reviews: (reviews.data ?? []) as ExpeditionReview[],
   };
-  return { ...w, ledger: new Ledger(w.deals, w.partners, w.exps) };
+  return { ...w, ledger: new Ledger(w.deals, w.partners, w.exps, w.reviews) };
 });

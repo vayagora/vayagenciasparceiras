@@ -157,3 +157,13 @@ export type BalanceEntry = {
   created_by_name: string;
   created_at: string;
 };
+
+// Conferência da Vay (SPEC 2.1): pessoa marcada como "Conferido" numa expedição. Não volta para "A conferir".
+export type ExpeditionReview = {
+  id: string;
+  expedition_id: string;
+  person_key: string;
+  person_name: string;
+  reviewed_by_name: string;
+  reviewed_at: string;
+};

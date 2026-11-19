@@ -173,13 +173,14 @@ describe("conversões do negócio", () => {
     const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
     expect(cfg.wonStages).toEqual(["135525686"]);
     expect(cfg.lostStages).toEqual(["closedlost"]);
-    expect([cfg.origemProp, cfg.origemValues]).toEqual(["origem_do_negocio", ["Agência Parceira", "Afiliado"]]);
+    expect([cfg.origemProp, cfg.origemValues]).toEqual(["origem_do_negocio", ["Agências Parceiras", "Agência Parceira", "Afiliado"]]);
   });
 
   it("origem da agência: ignora acentos e maiúsculas", () => {
     const cfg = hubspotConfig({ HUBSPOT_TOKEN: "x" })!;
     expect(isAgencyOrigem(cfg, "Afiliado")).toBe(true);
     expect(isAgencyOrigem(cfg, "agencia parceira")).toBe(true);
+    expect(isAgencyOrigem(cfg, "Agências Parceiras")).toBe(true);
     expect(isAgencyOrigem(cfg, "Passivo [ação do contato]")).toBe(false);
     expect(isAgencyOrigem(cfg, null)).toBe(false);
   });

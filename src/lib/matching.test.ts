@@ -192,19 +192,40 @@ describe("lista de clientes = passageiros dos negócios", () => {
   const casal = () =>
     deal({ passengers: [pax("Emerson", { is_titular: true }), pax("Gislaine")], voo: 15000, hotel: 0, seguro: 0 });
 
-  it("casal num negócio: duas linhas, valores só na do titular, comissão uma vez", () => {
+  it("negócio da agência com 2 passageiros não vai para a lista: os dois vão para A conferir e não remunera", () => {
     const l = new Ledger([casal()], [partner], [madrid]);
-    const lines = l.lines(madrid);
-    expect(lines.map((x) => x.name)).toEqual(["Emerson", "Gislaine"]);
-    const [em, gi] = lines;
-    expect(em.primary.length).toBe(1);
-    expect(em.values.voo).toBe(15000);
-    expect(em.com.total).toBeCloseTo(450);
-    expect(gi.primary).toEqual([]);
-    expect(gi.included.length).toBe(1);
-    expect(gi.com.total).toBe(0);
-    expect(l.expStats(madrid)).toMatchObject({ n: 2, closed: 2, deals: 1 });
-    expect(l.expStats(madrid).total).toBeCloseTo(450);
+    expect(l.lines(madrid)).toEqual([]);
+    expect(l.paid).toEqual([]);
+    const q = l.reviewQueue(madrid);
+    expect(q.pending.map((p) => [p.name, p.reasons])).toEqual([["Emerson", ["varios"]], ["Gislaine", ["varios"]]]);
+    expect(l.pendingFor(madrid)).toBe(2);
+  });
+
+  it("separado no HubSpot (um negócio por passageiro): os dois vão direto para Passageiros", () => {
+    const em = pax("Emerson", { is_titular: true });
+    const gi = pax("Gislaine", { is_titular: true });
+    const l = new Ledger([deal({ passengers: [em], voo: 7500, hotel: 0, seguro: 0 }), deal({ passengers: [gi], voo: 7500, hotel: 0, seguro: 0 })], [partner], [madrid]);
+    expect(l.lines(madrid).map((x) => [x.name, x.com.total])).toEqual([["Emerson", 225], ["Gislaine", 225]]);
+    expect(l.pendingFor(madrid)).toBe(0);
+    expect(l.expStats(madrid)).toMatchObject({ n: 2, closed: 2, deals: 2, total: 450 });
+  });
+
+  it("conferido pela Vay: sai de A conferir, vai para Conferidos e não volta", () => {
+    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Gislaine", person_name: "Gislaine", reviewed_by_name: "Ana", reviewed_at: "2026-11-19T12:00:00Z" };
+    const l = new Ledger([casal()], [partner], [madrid], [review]);
+    const q = l.reviewQueue(madrid);
+    expect(q.pending.map((p) => p.name)).toEqual(["Emerson"]);
+    expect(q.done.map((p) => [p.name, p.review?.reviewed_by_name])).toEqual([["Gislaine", "Ana"]]);
+    // marcação de outra expedição não vale aqui
+    const other = new Ledger([casal()], [partner], [madrid], [{ ...review, expedition_id: "outra" }]);
+    expect(other.pendingFor(madrid)).toBe(2);
+  });
+
+  it("quem já está em Passageiros não volta para A conferir por outro negócio", () => {
+    const em = pax("Emerson", { is_titular: true });
+    const l = new Ledger([deal({ passengers: [em] }), deal({ passengers: [em, pax("Gislaine")] })], [partner], [madrid]);
+    expect(l.lines(madrid).map((x) => x.name)).toEqual(["Emerson"]);
+    expect(l.reviewQueue(madrid).pending.map((p) => p.name)).toEqual(["Gislaine"]);
   });
 
   it("a mesma pessoa em dois negócios (voo e seguro): uma linha, valores somados", () => {
@@ -232,15 +253,6 @@ describe("lista de clientes = passageiros dos negócios", () => {
     expect(lines.map((x) => x.name)).toEqual(["Filha Viajante"]);
     expect(lines[0].boughtBy).toEqual(["Pai Comprador"]);
     expect(lines[0].com.total).toBeCloseTo(450); // linha principal: o primeiro que viaja
-  });
-
-  it("titular comprador que também viaja: 'comprado por' só para o acompanhante", () => {
-    const edu = pax("Eduardo Dias da Cunha Lima", { is_titular: true, is_buyer: true });
-    const gabi = pax("Gabriela Tolentino");
-    const l = new Ledger([deal({ passengers: [edu, gabi] })], [partner], [madrid]);
-    const [e, g] = l.lines(madrid);
-    expect(e.boughtBy).toEqual([]);
-    expect(g.boughtBy).toEqual(["Eduardo Dias da Cunha Lima"]);
   });
 
   it("ordem: compra concluída primeiro, depois negociação, contato e não comprou", () => {
@@ -273,12 +285,13 @@ describe("negócios não sinalizados no HubSpot", () => {
     expect(r.com.total).toBe(0);
     expect(r.potential.total).toBeCloseTo(450);
     expect(r.fixes).toEqual([
-      'marcar "Origem do Negócio" como "Agência Parceira" (hoje: Passivo [ação do contato])',
+      'marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Passivo [ação do contato])',
       'associar a empresa "Horizonte Eventos" ao negócio',
     ]);
     expect(l.lines(madrid)).toEqual([]);
     expect(l.paid).toEqual([]);
     expect(l.pendingFor(madrid)).toBe(1);
+    expect(l.reviewQueue(madrid).pending.map((p) => [p.name, p.reasons])).toEqual([["Ana", ["nao_sinalizado"]]]);
   });
 
   it("em aberto e não sinalizado (caso Claudia): também aponta, sem comissão potencial", () => {
@@ -297,7 +310,7 @@ describe("negócios não sinalizados no HubSpot", () => {
     const d = naoSinalizado({ hs_agency: "Grupo Atlas", legs: [{ city: "Gramado", date: "2026-12-03" }], end_date: "2026-12-06" });
     const [r] = resolveDeals([d], [partner, atlas], [madrid, gramado]);
     expect(r.suggested?.id).toBe("eGra");
-    expect(r.fixes).toEqual(['marcar "Origem do Negócio" como "Agência Parceira" (hoje: Passivo [ação do contato])']);
+    expect(r.fixes).toEqual(['marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Passivo [ação do contato])']);
   });
 
   it("sem expedição compatível: ignorado, sem pendência", () => {
