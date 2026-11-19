@@ -84,6 +84,14 @@ export function BalanceStatement({
         </section>
       ) : null}
 
+      {partner.credit_synced_at === null || partner.credit_synced_at === undefined ? (
+        <div className="notice" role="status">
+          {isVay
+            ? "O saldo desta agência ainda não veio do HubSpot. Rode “Sincronizar agora” na Visão geral e confira a mensagem de créditos."
+            : "Seu saldo está sendo atualizado pela equipe Vay Agora."}
+        </div>
+      ) : null}
+
       {isVay && statement.gap !== 0 ? (
         <div className="notice" role="status">
           O saldo do HubSpot difere da soma dos lançamentos em {brl(statement.gap)}. Confira no HubSpot o campo “Créditos abertos”

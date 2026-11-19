@@ -288,8 +288,14 @@ export async function syncHubspot(admin: SupabaseClient): Promise<SyncResult> {
 async function syncCredits(admin: SupabaseClient, cfg: HubspotConfig, partners: { id: string; afiliado: string }[]): Promise<string> {
   const companies = await partnerCompanies(cfg, partners.map((p) => String(p.afiliado)));
   const found = partners.filter((p) => companies.has(String(p.afiliado)));
-  const credits = await companyCredits(cfg, found.map((p) => companies.get(String(p.afiliado))!.id));
   const now = new Date().toISOString();
+  // Saldo primeiro: vem da empresa (escopo de empresas), mesmo que os lançamentos falhem (escopo de Créditos)
+  for (const p of found) {
+    const c = companies.get(String(p.afiliado))!;
+    const { error } = await admin.from("partners").update({ hubspot_company_id: c.id, credit_balance: c.balance, credit_synced_at: now }).eq("id", p.id);
+    if (error) throw new Error(`saldo de ${p.afiliado}: ${error.message}`);
+  }
+  const credits = await companyCredits(cfg, found.map((p) => companies.get(String(p.afiliado))!.id));
   let lines = 0;
   for (const p of found) {
     const c = companies.get(String(p.afiliado))!;
@@ -305,11 +311,6 @@ async function syncCredits(admin: SupabaseClient, cfg: HubspotConfig, partners: 
     if (list.length) del = del.not("hubspot_id", "in", `(${list.map((x) => x.hubspot_id).join(",")})`);
     const { error: dErr } = await del;
     if (dErr) throw new Error(`créditos de ${p.afiliado}: ${dErr.message}`);
-    const { error: pErr } = await admin
-      .from("partners")
-      .update({ hubspot_company_id: c.id, credit_balance: c.balance, credit_synced_at: now })
-      .eq("id", p.id);
-    if (pErr) throw new Error(`saldo de ${p.afiliado}: ${pErr.message}`);
   }
   const missing = partners.length - found.length;
   return `${lines} lançamentos de crédito` + (missing ? ` · ${missing} parceiro(s) sem empresa com o mesmo nome no HubSpot` : "");
