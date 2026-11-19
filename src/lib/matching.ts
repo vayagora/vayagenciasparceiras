@@ -134,10 +134,10 @@ export function sameName(a: string, b: string): boolean {
 }
 
 // O que falta no HubSpot para o negócio contar como de agência parceira.
-export function hubspotFixes(d: Pick<Deal, "hs_origem" | "hs_agency">, partnerName: string, origemValue = "Agências Parceiras"): string[] {
+export function hubspotFixes(d: Pick<Deal, "hs_origem" | "hs_agency">, partnerName: string, origemValue = "Agência parceira"): string[] {
   const out: string[] = [];
   // "Afiliado" é o método antigo: não conta mais como negócio de agência (SPEC 2.1)
-  const isAgency = ["agencias parceiras", "agencia parceira"].includes(foldName(d.hs_origem));
+  const isAgency = foldName(d.hs_origem) === "agencia parceira";
   if (!isAgency) out.push(`marcar "Origem do Negócio" como "${origemValue}"${d.hs_origem ? ` (hoje: ${d.hs_origem})` : ""}`);
   if (!d.hs_agency) out.push(`associar a empresa "${partnerName}" ao negócio`);
   return out;

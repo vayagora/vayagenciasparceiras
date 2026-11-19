@@ -6,7 +6,7 @@ Como a sincronização (`src/lib/sync.ts`, `src/lib/hubspot.ts`) lê os negócio
 
 - **Qualquer etapa** do funil: em aberto (`HUBSPOT_OPEN_STAGES`), ganho (`HUBSPOT_WON_STAGES`, padrão `135525686` = "Emissão Realizada")
   e perdido (`HUBSPOT_LOST_STAGES`, padrão `closedlost`). Só o ganho remunera; os outros dão a etapa do cliente.
-- **Origem do Negócio** = "Agências Parceiras" ("Afiliado", o método antigo, não conta: o negócio vai para "A conferir" se combinar com uma expedição) (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`, lista separada por vírgula;
+- **Origem do Negócio** = "Agência parceira" ("Afiliado", o método antigo, não conta: o negócio vai para "A conferir" se combinar com uma expedição) (`HUBSPOT_ORIGEM_PROP` / `HUBSPOT_ORIGEM_VALUE`, lista separada por vírgula;
   ignora acentos e maiúsculas).
 - A **agência é a Empresa associada ao negócio**. O nome da empresa no HubSpot precisa ser igual ao nome
   (afiliado) do parceiro no sistema, ignorando acentos e maiúsculas (ex.: "JT Viajar e Correr").

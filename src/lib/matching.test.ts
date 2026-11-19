@@ -27,7 +27,7 @@ function deal(over: Partial<Deal> & { passengers?: Passenger[] } = {}): Deal {
     stage_kind: "won",
     partner_note: "",
     signaled: true,
-    hs_origem: "Agência Parceira",
+    hs_origem: "Agência parceira",
     hs_agency: "Horizonte Eventos",
     details: {},
     payment_methods: ["Pix/Ted/Doc"],
@@ -291,7 +291,7 @@ describe("negócios não sinalizados no HubSpot", () => {
     expect(r.com.total).toBe(0);
     expect(r.potential.total).toBeCloseTo(450);
     expect(r.fixes).toEqual([
-      'marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Passivo [ação do contato])',
+      'marcar "Origem do Negócio" como "Agência parceira" (hoje: Passivo [ação do contato])',
       'associar a empresa "Horizonte Eventos" ao negócio',
     ]);
     expect(l.lines(madrid)).toEqual([]);
@@ -301,15 +301,15 @@ describe("negócios não sinalizados no HubSpot", () => {
   });
 
   it("em aberto e não sinalizado (caso Claudia): também aponta, sem comissão potencial", () => {
-    const [r] = resolveDeals([naoSinalizado({ stage_kind: "open", hs_origem: "Agências Parceiras" })], [partner], [madrid]);
+    const [r] = resolveDeals([naoSinalizado({ stage_kind: "open", hs_origem: "Agência parceira" })], [partner], [madrid]);
     expect(r.suggested?.id).toBe("eMad");
     expect(r.potential.total).toBe(0);
     expect(r.fixes).toEqual(['associar a empresa "Horizonte Eventos" ao negócio']);
   });
 
-  it("só 'Agências Parceiras' conta; 'Afiliado' (método antigo) pede a troca da origem (caso Eliandro)", () => {
-    expect(hubspotFixes({ hs_origem: "Agências Parceiras", hs_agency: "X" }, "X")).toEqual([]);
-    expect(hubspotFixes({ hs_origem: "Afiliado", hs_agency: "X" }, "X")).toEqual(['marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Afiliado)']);
+  it("só 'Agência parceira' conta; 'Afiliado' (método antigo) pede a troca da origem (caso Eliandro)", () => {
+    expect(hubspotFixes({ hs_origem: "Agência parceira", hs_agency: "X" }, "X")).toEqual([]);
+    expect(hubspotFixes({ hs_origem: "Afiliado", hs_agency: "X" }, "X")).toEqual(['marcar "Origem do Negócio" como "Agência parceira" (hoje: Afiliado)']);
     const l = new Ledger([naoSinalizado({ hs_origem: "Afiliado", hs_agency: "Horizonte Eventos" })], [partner], [madrid]);
     expect(l.lines(madrid)).toEqual([]);
     expect(l.reviewQueue(madrid).pending.map((p) => p.reasons)).toEqual([["nao_sinalizado"]]);
@@ -319,7 +319,7 @@ describe("negócios não sinalizados no HubSpot", () => {
     const d = naoSinalizado({ hs_agency: "Grupo Atlas", legs: [{ city: "Gramado", date: "2026-12-03" }], end_date: "2026-12-06" });
     const [r] = resolveDeals([d], [partner, atlas], [madrid, gramado]);
     expect(r.suggested?.id).toBe("eGra");
-    expect(r.fixes).toEqual(['marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Passivo [ação do contato])']);
+    expect(r.fixes).toEqual(['marcar "Origem do Negócio" como "Agência parceira" (hoje: Passivo [ação do contato])']);
   });
 
   it("sem expedição compatível: ignorado, sem pendência", () => {

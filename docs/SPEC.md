@@ -1,17 +1,17 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
 Versão 2.2 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
-"Vay Agências Parceiras — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+"Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
 
-**Mudanças na 2.2 — pendências de lançamento na visão do parceiro:** na tela da expedição, o parceiro vê a seção **"Pendências de lançamento"** com **só os nomes** dos passageiros "A conferir" de negócios marcados como da agência dele no HubSpot (Origem "Agências Parceiras" + empresa associada; na prática, negócios com mais de um passageiro). Não aparecem: negócios não sinalizados (sem origem ou sem a empresa), passageiros "Conferidos" e quem já está em Passageiros. Feito no banco pela função `partner_pending_names` (migração 0015), que devolve só o nome; a expedição de cada negócio da agência é gravada na sincronização (`deals.matched_expedition_id`).
+**Mudanças na 2.2 — pendências de lançamento na visão do parceiro:** na tela da expedição, o parceiro vê a seção **"Pendências de lançamento"** com **só os nomes** dos passageiros "A conferir" de negócios marcados como da agência dele no HubSpot (Origem "Agência parceira" + empresa associada; na prática, negócios com mais de um passageiro). Não aparecem: negócios não sinalizados (sem origem ou sem a empresa), passageiros "Conferidos" e quem já está em Passageiros. Feito no banco pela função `partner_pending_names` (migração 0015), que devolve só o nome; a expedição de cada negócio da agência é gravada na sincronização (`deals.matched_expedition_id`).
 
 **Mudanças na 2.1 — conferência por passageiro (prevalece sobre a 2.0 onde houver conflito):**
 
 1. Cada expedição tem três abas (as duas últimas só para a Vay): **Passageiros**, **A conferir** e **Conferidos**.
-2. **Passageiros** só é preenchido pela **sincronização**: negócio com Origem "Agências Parceiras" **+ empresa da agência associada** e **um único passageiro** (contato com rótulo "Passageiro"; comprador que não viaja não conta), vinculado à expedição por destino e data. É a lista que o parceiro vê e a única que remunera.
+2. **Passageiros** só é preenchido pela **sincronização**: negócio com Origem "Agência parceira" **+ empresa da agência associada** e **um único passageiro** (contato com rótulo "Passageiro"; comprador que não viaja não conta), vinculado à expedição por destino e data. É a lista que o parceiro vê e a única que remunera.
 3. **A conferir**: passageiros de (a) negócio da agência com **mais de um passageiro** e (b) negócio **não sinalizado** no HubSpot que combina com a expedição. A Vay **não** move ninguém para Passageiros: se for erro no HubSpot, corrige lá (ex.: um negócio por passageiro; origem e empresa) e a próxima sincronização leva a pessoa para Passageiros. Se não for cliente da expedição, a Vay marca **"Conferido"** (pode voltar para "A conferir").
 4. **Conferidos**: marcação da Vay por pessoa e expedição (`expedition_reviews`, migração 0014; quem e quando). Em cada sincronização a busca é refeita; quem está em Conferidos ou em Passageiros não volta para "A conferir".
-5. "Afiliado" (método antigo) não conta como negócio de agência: com data e destino de uma expedição, vai para "A conferir" pedindo a troca da origem para "Agências Parceiras".
+5. "Afiliado" (método antigo) não conta como negócio de agência: com data e destino de uma expedição, vai para "A conferir" pedindo a troca da origem para "Agência parceira".
 6. O parceiro só vê negócios da própria agência com um passageiro (RLS, migração 0014). Negócio da agência sem expedição compatível aparece para a Vay na Visão geral.
 
 **Mudanças na 2.0 — o sistema passa a ser só visualização (prevalece sobre o resto do documento onde houver conflito):**
