@@ -1,4 +1,5 @@
-// Sincronização agendada (Vercel Cron). Protegida por CRON_SECRET.
+// Sincronização agendada (Vercel Cron, todo dia às 08:00 UTC = 05:00 em Brasília; ver vercel.json).
+// Protegida por CRON_SECRET: a Vercel envia "Authorization: Bearer <CRON_SECRET>" sozinha.
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
