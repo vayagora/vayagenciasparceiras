@@ -6,10 +6,11 @@ Versão 2.1 · baseada no protótipo aprovado (canvas "Vay Agora — Expediçõe
 **Mudanças na 2.1 — conferência por passageiro (prevalece sobre a 2.0 onde houver conflito):**
 
 1. Cada expedição tem três abas (as duas últimas só para a Vay): **Passageiros**, **A conferir** e **Conferidos**.
-2. **Passageiros** só é preenchido pela **sincronização**: negócio com Origem "Agências Parceiras" (ou "Agência Parceira"/"Afiliado") **+ empresa da agência associada** e **um único passageiro** (contato com rótulo "Passageiro"; comprador que não viaja não conta), vinculado à expedição por destino e data. É a lista que o parceiro vê e a única que remunera.
+2. **Passageiros** só é preenchido pela **sincronização**: negócio com Origem "Agências Parceiras" **+ empresa da agência associada** e **um único passageiro** (contato com rótulo "Passageiro"; comprador que não viaja não conta), vinculado à expedição por destino e data. É a lista que o parceiro vê e a única que remunera.
 3. **A conferir**: passageiros de (a) negócio da agência com **mais de um passageiro** e (b) negócio **não sinalizado** no HubSpot que combina com a expedição. A Vay **não** move ninguém para Passageiros: se for erro no HubSpot, corrige lá (ex.: um negócio por passageiro; origem e empresa) e a próxima sincronização leva a pessoa para Passageiros. Se não for cliente da expedição, a Vay marca **"Conferido"** (pode voltar para "A conferir").
 4. **Conferidos**: marcação da Vay por pessoa e expedição (`expedition_reviews`, migração 0014; quem e quando). Em cada sincronização a busca é refeita; quem está em Conferidos ou em Passageiros não volta para "A conferir".
-5. O parceiro só vê negócios da própria agência com um passageiro (RLS, migração 0014). Negócio da agência sem expedição compatível aparece para a Vay na Visão geral.
+5. "Afiliado" (método antigo) não conta como negócio de agência: com data e destino de uma expedição, vai para "A conferir" pedindo a troca da origem para "Agências Parceiras".
+6. O parceiro só vê negócios da própria agência com um passageiro (RLS, migração 0014). Negócio da agência sem expedição compatível aparece para a Vay na Visão geral.
 
 **Mudanças na 2.0 — o sistema passa a ser só visualização (prevalece sobre o resto do documento onde houver conflito):**
 

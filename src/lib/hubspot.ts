@@ -36,7 +36,7 @@ export function hubspotConfig(env: Record<string, string | undefined> = process.
     buyerLabel: env.HUBSPOT_BUYER_LABEL ?? "Comprador",
     passengerLabel: env.HUBSPOT_PASSENGER_LABEL ?? "Passageiro",
     origemProp: env.HUBSPOT_ORIGEM_PROP ?? "origem_do_negocio",
-    origemValues: (env.HUBSPOT_ORIGEM_VALUE ?? "Agências Parceiras,Agência Parceira,Afiliado").split(",").map((s) => s.trim()).filter(Boolean),
+    origemValues: (env.HUBSPOT_ORIGEM_VALUE ?? "Agências Parceiras,Agência Parceira").split(",").map((s) => s.trim()).filter(Boolean),
     openStages: (env.HUBSPOT_OPEN_STAGES ?? "appointmentscheduled,qualifiedtobuy,presentationscheduled,135850329,contractsent,135525685")
       .split(",").map((s) => s.trim()).filter(Boolean),
     lostStages: (env.HUBSPOT_LOST_STAGES ?? "closedlost").split(",").map((s) => s.trim()).filter(Boolean),
@@ -369,7 +369,7 @@ async function searchDeals(cfg: HubspotConfig, filterGroups: { filters: Filter[]
   return out;
 }
 
-// Negócios da agência parceira (origem "Agência Parceira"/"Afiliado") em qualquer etapa do funil.
+// Negócios da agência parceira (origem "Agências Parceiras") em qualquer etapa do funil.
 // Lê todos a cada sincronização para pegar também mudanças nas associações
 // (que não alteram a data de modificação do negócio).
 export function searchAgencyDeals(cfg: HubspotConfig): Promise<HsDeal[]> {

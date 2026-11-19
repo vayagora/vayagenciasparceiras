@@ -295,15 +295,18 @@ describe("negócios não sinalizados no HubSpot", () => {
   });
 
   it("em aberto e não sinalizado (caso Claudia): também aponta, sem comissão potencial", () => {
-    const [r] = resolveDeals([naoSinalizado({ stage_kind: "open", hs_origem: "Afiliado" })], [partner], [madrid]);
+    const [r] = resolveDeals([naoSinalizado({ stage_kind: "open", hs_origem: "Agências Parceiras" })], [partner], [madrid]);
     expect(r.suggested?.id).toBe("eMad");
     expect(r.potential.total).toBe(0);
     expect(r.fixes).toEqual(['associar a empresa "Horizonte Eventos" ao negócio']);
   });
 
-  it("origem 'Afiliado' ou 'Agência Parceira' contam como certas", () => {
-    expect(hubspotFixes({ hs_origem: "Afiliado", hs_agency: "X" }, "X")).toEqual([]);
-    expect(hubspotFixes({ hs_origem: "Agência parceira", hs_agency: "X" }, "X")).toEqual([]);
+  it("só 'Agências Parceiras' conta; 'Afiliado' (método antigo) pede a troca da origem (caso Eliandro)", () => {
+    expect(hubspotFixes({ hs_origem: "Agências Parceiras", hs_agency: "X" }, "X")).toEqual([]);
+    expect(hubspotFixes({ hs_origem: "Afiliado", hs_agency: "X" }, "X")).toEqual(['marcar "Origem do Negócio" como "Agências Parceiras" (hoje: Afiliado)']);
+    const l = new Ledger([naoSinalizado({ hs_origem: "Afiliado", hs_agency: "Horizonte Eventos" })], [partner], [madrid]);
+    expect(l.lines(madrid)).toEqual([]);
+    expect(l.reviewQueue(madrid).pending.map((p) => p.reasons)).toEqual([["nao_sinalizado"]]);
   });
 
   it("empresa da agência associada, mas origem errada: só pede a origem e fica no parceiro certo", () => {
