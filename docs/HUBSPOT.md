@@ -72,8 +72,9 @@ Aeroportos viram cidade + coordenadas pela tabela `src/lib/airports.ts` (gerada 
 e da base OpenFlights). Aeroporto a até 60 km de uma cidade da lista de destinos vira essa cidade
 (GRU → São Paulo), para o vínculo exato funcionar. 93 aeroportos pequenos não têm coordenada e só casam pelo nome.
 
-Limitação: no seguro e na hospedagem, o destino é texto livre. Se estiver escrito como país ("Tailândia"),
-não casa com a cidade da expedição.
+No seguro e na hospedagem, o destino é texto livre (muitas vezes país ou região). Por isso (SPEC 2.5), quando o
+negócio é da agência, ele segue a passagem do mesmo passageiro na expedição (datas compatíveis); sem passagem, e com
+destino que não é cidade, vincula só pela data entre as expedições do parceiro.
 
 ## Um passageiro por negócio (SPEC 2.1)
 

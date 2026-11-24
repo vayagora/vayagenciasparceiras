@@ -435,3 +435,64 @@ describe("identificação de pessoas", () => {
     expect(dealNo({ hubspot_id: "123", seq: 4 })).toBe("#123");
   });
 });
+
+describe("hospedagem e seguro (SPEC 2.5)", () => {
+  const tailandia: Expedition = { ...madrid, id: "eTh", name: "Tailândia", city: "Tailândia", arrival_airport: "BKK", start_date: "2026-12-01", days: 15 };
+  const aereo = (who: Passenger) =>
+    deal({ passengers: [who], legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16", voo: 9000, hotel: 0, seguro: 0 });
+  const seguro = (who: Passenger, over: Partial<Deal> = {}) =>
+    deal({ passengers: [who], legs: [{ city: "Ásia", date: "2026-11-27" }], end_date: "2026-12-16", voo: 0, hotel: 0, seguro: 600, ...over });
+
+  it("caso 1: seguro com destino “Ásia” entra na expedição em que o passageiro tem passagem (datas compatíveis)", () => {
+    const luci = pax("Luciana Miranda Melo", { is_titular: true });
+    const l = new Ledger([aereo(luci), seguro(luci)], [partner], [madrid, tailandia]);
+    const s = l.resolved[1];
+    expect(s.exp?.id).toBe("eTh");
+    expect(s.reason).toMatch(/Acompanha a passagem de Luciana Miranda Melo/);
+    expect(s.com.total).toBeCloseTo(30);
+    const [line] = l.lines(tailandia);
+    expect(line.values).toEqual({ voo: 9000, hotel: 0, seguro: 600 });
+  });
+
+  it("caso 1: pelo nome completo, quando o contato do seguro é outro registro no HubSpot", () => {
+    const a = pax("Luciana Miranda Melo", { is_titular: true, hubspot_contact_id: "1" });
+    const b = pax("LUCIANA MIRANDA MELO", { is_titular: true, hubspot_contact_id: "2" });
+    expect(resolveDeals([aereo(a), seguro(b)], [partner], [madrid, tailandia])[1].exp?.id).toBe("eTh");
+  });
+
+  it("caso 1: passagem com pendência (negócio conjunto) leva o seguro junto para A conferir", () => {
+    const em = pax("Emerson", { is_titular: true });
+    const joint = deal({ passengers: [em, pax("Gislaine")], legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16" });
+    const l = new Ledger([joint, seguro(em)], [partner], [tailandia]);
+    expect(l.resolved[1].exp?.id).toBe("eTh");
+    expect(l.lines(tailandia)).toEqual([]);
+    expect(l.pendingAgencyDeals("eTh").length).toBe(2);
+  });
+
+  it("caso 2: sem passagem, destino que não é cidade → só a data, entre as expedições do parceiro", () => {
+    const [r] = resolveDeals([seguro(pax("Ana", { is_titular: true }))], [partner], [madrid, tailandia]);
+    expect(r.exp?.id).toBe("eTh");
+    expect(r.reason).toMatch(/não é uma cidade/);
+    expect(r.flags.map((f) => f.key)).toEqual(["aprox"]);
+  });
+
+  it("caso 2: hospedagem com cidade segue destino + data", () => {
+    const h = deal({ passengers: [pax("Ana", { is_titular: true })], legs: [{ city: "Madrid", date: "2026-11-13" }], end_date: "2026-11-18", voo: 0, hotel: 3000, seguro: 0 });
+    const [r] = resolveDeals([h], [partner], [madrid, tailandia]);
+    expect(r.exp?.id).toBe("eMad");
+    expect(r.com.total).toBeCloseTo(90);
+  });
+
+  it("caso 2: datas de outra viagem não prendem o seguro à passagem; sem expedição compatível, pendência", () => {
+    const luci = pax("Luciana", { is_titular: true });
+    const [, r] = resolveDeals([aereo(luci), seguro(luci, { legs: [{ city: "Ásia", date: "2027-03-01" }], end_date: "2027-03-10" })], [partner], [tailandia]);
+    expect(r.exp).toBeNull();
+    expect(r.flags.map((f) => f.key)).toEqual(["nenhuma"]);
+  });
+
+  it("caso 3: não sinalizado só entra em A conferir se destino e data baterem", () => {
+    const ns = (legs: Deal["legs"]) => seguro(pax("Zé", { is_titular: true }), { signaled: false, afiliado: "", hs_origem: "", hs_agency: "", legs });
+    expect(resolveDeals([ns([{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }])], [partner], [tailandia])[0].suggested?.id).toBe("eTh");
+    expect(resolveDeals([ns([{ city: "Ásia", date: "2026-11-30" }])], [partner], [tailandia])[0].suggested).toBeNull();
+  });
+});

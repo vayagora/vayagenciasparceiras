@@ -194,7 +194,7 @@ export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expeditio
       .filter((x): x is { e: Expedition; m: Match } => !!x.m)
       .sort((a, b) => b.m.score - a.m.score);
 
-  return deals.map((d) => {
+  const base = deals.map((d) => {
     const p = byAfiliado.get(d.afiliado) ?? null;
     const r: Resolved = {
       deal: d,
@@ -249,4 +249,77 @@ export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expeditio
     r.needsReview = r.flags.some((f) => PENDING.includes(f.key));
     return r;
   });
+  return linkStaysAndInsurance(base, exps, tol);
+}
+
+// ---------------------------------------------------------------- Hospedagem e seguro (SPEC 2.5)
+
+// Hospedagem ou seguro (sem passagem aérea no negócio)
+export const isStayOrInsurance = (d: Pick<Deal, "voo" | "hotel" | "seguro">) =>
+  (Number(d.voo) || 0) <= 0 && ((Number(d.hotel) || 0) > 0 || (Number(d.seguro) || 0) > 0);
+
+// Destino que não dá para localizar (país ou região, ex.: "Ásia", "Europa"): nenhum trecho com coordenadas
+export const unknownPlace = (d: Pick<Deal, "legs">) =>
+  (d.legs ?? []).every((l) => !(typeof l.lat === "number" && typeof l.lng === "number") && !cityOf(l.city));
+
+// Só datas: a viagem cruza a janela da expedição? Devolve a distância (dias) entre o início da viagem e o da expedição.
+export function dateFit(d: Pick<Deal, "legs" | "end_date">, e: Pick<Expedition, "start_date" | "days">, tol: Tolerances = DEFAULT_TOL): number | null {
+  if (!d.legs?.length) return null;
+  const es = dayNum(e.start_date);
+  const ee = es + Number(e.days) - 1;
+  const ts = dayNum(d.legs[0].date);
+  const te = dayNum(d.end_date);
+  if (te < es - tol.before || ts > ee + tol.after) return null;
+  return Math.abs(es - ts);
+}
+
+const keysOf = (p: Pick<Passenger, "hubspot_contact_id" | "name">) =>
+  [p.hubspot_contact_id ? `c:${p.hubspot_contact_id}` : "", `n:${foldName(p.name)}`].filter((k) => k && k !== "n:");
+
+// Negócio da agência (sinalizado) de hospedagem ou seguro:
+// 1º se um passageiro dele tem passagem aérea da agência numa expedição com datas compatíveis, entra nela;
+// 2º senão, destino + data (já calculado); com destino que não é cidade (país/região), só a data, entre as
+// expedições do parceiro. Negócio não sinalizado segue a regra geral (destino + data → "A conferir").
+function linkStaysAndInsurance(rs: Resolved[], exps: Expedition[], tol: Tolerances): Resolved[] {
+  const air = new Map<string, { exp: Expedition; r: Resolved; name: string }[]>();
+  for (const r of rs) {
+    if (r.deal.signaled === false || !r.exp || isStayOrInsurance(r.deal)) continue;
+    for (const p of travellers(r.deal))
+      for (const k of keysOf(p)) air.set(k, [...(air.get(k) ?? []), { exp: r.exp, r, name: p.name }]);
+  }
+  return rs.map((r) => {
+    const d = r.deal;
+    if (d.signaled === false || !isStayOrInsurance(d) || !r.partner) return r;
+    const viaAir = travellers(d)
+      .flatMap((p) => keysOf(p).flatMap((k) => air.get(k) ?? []))
+      .filter((x) => x.exp.partner_id === r.partner!.id)
+      .map((x) => ({ ...x, fit: dateFit(d, x.exp, tol) }))
+      .filter((x): x is typeof x & { fit: number } => x.fit !== null)
+      .sort((a, b) => a.fit - b.fit)[0];
+    if (viaAir) return relink(r, viaAir.exp, `Acompanha a passagem de ${viaAir.name} (${dealNo(viaAir.r.deal)}) nesta expedição.`, false);
+    if (!r.exp && unknownPlace(d)) {
+      const byDate = exps
+        .filter((e) => e.partner_id === r.partner!.id)
+        .map((e) => ({ e, fit: dateFit(d, e, tol) }))
+        .filter((x): x is { e: Expedition; fit: number } => x.fit !== null)
+        .sort((a, b) => a.fit - b.fit)[0];
+      if (byDate) {
+        const dest = d.legs.map((l) => l.city).filter(Boolean).join(", ");
+        return relink(r, byDate.e, `Destino “${dest}” não é uma cidade: vinculado pela data à expedição.`, true);
+      }
+    }
+    return r;
+  });
+}
+
+function relink(r: Resolved, e: Expedition, reason: string, approx: boolean): Resolved {
+  const out: Resolved = { ...r, exp: e, reason, candIds: [e.id], flags: [], com: ZERO };
+  if (approx) out.flags.push({ key: "aprox", label: "Vínculo por aproximação", tone: "bluebell" });
+  if (r.deal.stage_kind === "won") {
+    const c = cashback(r.deal);
+    out.com = c.com;
+    out.flags.push(...c.flags);
+  }
+  out.needsReview = out.flags.some((f) => PENDING.includes(f.key));
+  return out;
 }

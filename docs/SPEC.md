@@ -1,7 +1,12 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.4 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.5 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.5 — hospedagem e seguro:** o destino desses negócios é texto livre e costuma vir como país ou região ("Ásia", "Europa").
+1. **Negócio da agência (sinalizado) com passagem do mesmo passageiro:** se um passageiro do negócio de hospedagem/seguro tem passagem aérea da agência numa expedição (mesmo contato do HubSpot ou mesmo nome completo) e as datas são compatíveis com ela, o negócio entra nessa expedição. Se a passagem tiver pendência, tudo fica em "A conferir" (regra do grupo).
+2. **Negócio da agência sem passagem do mesmo passageiro:** destino + data; se o destino não é cidade (país/região), **só a data**, entre as expedições do parceiro (vínculo por aproximação).
+3. **Não sinalizado:** destino + data (+ parceiro pela empresa, se houver) → "A conferir". Com destino que não é cidade, não há como confirmar e ele não aparece.
 
 **Mudanças na 2.4 — negócio conjunto, pendências por passageiro, concluir e reabrir (prevalece sobre 2.1 e 2.2):**
 
