@@ -3,14 +3,17 @@
 Versão 2.4 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
 
-**Mudanças na 2.4 — vários passageiros e acompanhantes; concluir e reabrir (prevalece sobre 2.1 e 2.2):**
+**Mudanças na 2.4 — negócio conjunto, pendências por passageiro, concluir e reabrir (prevalece sobre 2.1 e 2.2):**
 
-1. Negócio da agência (Origem "Agência parceira" + empresa associada) com **vários passageiros vai normalmente para Passageiros** (todos viajam, em geral). Valores e comissão uma vez por negócio, na linha do titular (ou do primeiro passageiro que continua na lista).
-2. A qualquer momento a Vay pode marcar um passageiro como **acompanhante** (não é da expedição): ele sai de Passageiros, vai para **Conferidos** e some para o parceiro (RLS, migração 0017). Dá para desfazer em Conferidos ("Voltar para Passageiros"). Se todos do negócio forem acompanhantes, o negócio sai da lista e não remunera.
-3. **A conferir** fica só com negócios **não sinalizados** que combinam com a expedição.
-4. **Ordem**: alfabética, com quem está no mesmo negócio junto (sub-linha logo abaixo). Para a Vay, cada linha mostra onde estão os outros passageiros do mesmo negócio (Passageiros, Conferidos ou A conferir), para manter o rastreio entre abas.
-5. **Concluir expedição** (Vay, a qualquer momento; avisa se a data de fim ainda não passou): se houver negócios com vários passageiros, o sistema lista esses negócios e exige a confirmação "Conferi os negócios com vários passageiros". Registra o valor apurado; o parceiro vê a expedição como **Concluída**. **Reabrir** (Vay) descarta o valor apurado, com aviso.
-6. "Pendências de lançamento" (2.2) deixa de existir: os negócios da agência já vão para a lista.
+1. Negócio da agência (Origem "Agência parceira" + empresa associada) com **um** passageiro vai direto para **Passageiros**.
+2. Negócio da agência com **vários** passageiros (negócio conjunto) vai para **A conferir**. Se todos viajam, a Vay usa **"Marcar como passageiros"** (o negócio inteiro vai para a lista). Se alguém não viaja (acompanhante), **não se resolve no sistema**: separa-se em negócios diferentes no HubSpot. Em Passageiros, o negócio conjunto aprovado tem **"Voltar para conferência"** (o negócio inteiro volta).
+3. A aprovação vale para os passageiros daquele momento (`expedition_approvals.passenger_keys`, migração 0017): se entrar ou sair alguém do negócio no HubSpot, **todos voltam para A conferir**.
+4. Negócio **não sinalizado** que combina com a expedição: **A conferir**; sem botão "Marcar como passageiros" (corrige no HubSpot) ou **"Marcar como conferido"** (não é da expedição; vai para **Conferidos**). Negócio conjunto nunca vai para Conferidos.
+5. **Qualquer pendência** do passageiro na expedição (negócio conjunto não conferido, composição que mudou, negócio não sinalizado não conferido) deixa ele **inteiro** em A conferir, e quem está no mesmo negócio vai junto (o grupo nunca se divide).
+6. **Ordem**: alfabética, com quem está no mesmo negócio junto (sub-linha). Para a Vay, cada linha mostra onde estão os outros passageiros do mesmo negócio (rastreio entre abas).
+7. **Pendências de lançamento** (parceiro): só os nomes dos passageiros pendentes de negócios da própria agência. O sistema grava essas pendências (`expedition_pending`) a cada sincronização e a cada marcação da Vay, porque o parceiro não enxerga os negócios não sinalizados.
+8. **Concluir expedição** (Vay, a qualquer momento; avisa se a data de fim não passou): **bloqueada** enquanto houver negócio da agência em A conferir (ficaria fora da apuração). Registra o valor apurado; o parceiro vê **Concluída**. **Reabrir** (Vay) descarta o valor apurado, com aviso.
+9. Só remunera o negócio da agência que está na lista (ganho, vinculado e sem pendência).
 
 **Mudanças na 2.3 — créditos vindos do HubSpot (como no sistema de comissários):**
 

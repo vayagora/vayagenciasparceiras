@@ -2,12 +2,12 @@
 
 // Tabela de clientes da expedição (SPEC 2.4): os passageiros dos negócios da agência no HubSpot.
 // Filtros, ordenação (A–Z por grupo: quem está no mesmo negócio fica junto, como sub-linha) e Excel.
-// Etapa e observação vêm do HubSpot. A Vay pode marcar um passageiro como acompanhante (vai para Conferidos).
+// Etapa e observação vêm do HubSpot. Negócio conjunto aprovado pela Vay pode voltar para a conferência (inteiro).
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Tone } from "@/lib/commission";
 import type { StageId } from "@/lib/types";
 import { buildXlsx, slug, type Cell } from "@/lib/xlsx";
-import { setPersonReviewed } from "../../actions";
+import { unapproveJointDeal } from "../../actions";
 import { ProductCell, type ProductDeal } from "./ProductCell";
 
 type Product = "voo" | "hotel" | "seguro";
@@ -25,8 +25,8 @@ export type TableRow = {
   hsNote: string;
   // Pessoas do mesmo negócio ficam juntas (sub-linhas)
   group: string;
-  // Negócio com vários passageiros (a Vay confere se há acompanhante)
-  multi: boolean;
+  // Negócios conjuntos aprovados pela Vay (botão "Voltar para conferência", só Vay)
+  approved: { dealId: string; no: string }[];
   // Rastreio (só Vay): outros passageiros do mesmo negócio e onde estão
   matesTxt?: string;
 };
@@ -49,7 +49,7 @@ export function ClientsTable({
   stageOptions: Option[];
   expName: string;
   emptyText: string;
-  // Vay: id da expedição para o botão "É acompanhante" (parceiro: ausente)
+  // Vay: id da expedição para o botão "Voltar para conferência" (parceiro: ausente)
   companionExpId?: string;
 }) {
   const [q, setQ] = useState("");
@@ -184,13 +184,13 @@ export function ClientsTable({
           </thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.key} className={r.sub ? "subrow" : r.multi ? "grouptop" : undefined}>
+              <tr key={r.key} className={r.sub ? "subrow" : undefined}>
                 <td className="freeze">
                   {r.sub ? <span className="muted" aria-hidden="true">↳ </span> : null}
                   <span className="strong">{r.name}</span>
                   {r.sub ? <span className="sr-only"> (mesmo negócio do passageiro acima)</span> : null}
                   {r.email ? <div className="sub">{r.email}</div> : null}
-                  {r.multi && companionExpId ? <div style={{ marginTop: 4 }}><span className="badge yellow">Vários passageiros no negócio</span></div> : null}
+                  {r.approved.length && companionExpId ? <div style={{ marginTop: 4 }}><span className="badge neutral">Negócio conjunto · conferido</span></div> : null}
                   {r.matesTxt ? <div className="sub">{r.matesTxt}</div> : null}
                 </td>
                 <td>
@@ -221,7 +221,9 @@ export function ClientsTable({
                   )}
                 </td>
                 {companionExpId ? (
-                  <td>{r.multi ? <CompanionButton expId={companionExpId} personKey={r.key} name={r.name} /> : null}</td>
+                  <td>
+                    {!r.sub ? r.approved.map((a) => <BackToReview key={a.dealId} expId={companionExpId} dealId={a.dealId} no={a.no} />) : null}
+                  </td>
                 ) : null}
               </tr>
             ))}
@@ -239,24 +241,24 @@ export function ClientsTable({
   );
 }
 
-// Vay: tira o passageiro da lista (não é da expedição). Vai para Conferidos; dá para desfazer lá.
-function CompanionButton({ expId, personKey, name }: { expId: string; personKey: string; name: string }) {
+// Vay: devolve o negócio conjunto inteiro para "A conferir".
+function BackToReview({ expId, dealId, no }: { expId: string; dealId: string; no: string }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
-  const mark = () => {
-    if (!window.confirm(`Marcar ${name} como acompanhante? Ele sai da lista de passageiros (e da visão do parceiro) e vai para Conferidos.`)) return;
+  const run = () => {
+    if (!window.confirm(`Voltar o negócio ${no} para a conferência? Todos os passageiros dele saem da lista e da visão do parceiro até serem marcados de novo.`)) return;
     start(async () => {
-      const r = await setPersonReviewed(expId, personKey, name, true, "acompanhante");
+      const r = await unapproveJointDeal(expId, dealId);
       setErr(r?.error ?? "");
     });
   };
   return (
-    <>
-      <button type="button" className="btn outline sm nowrap" disabled={pending} onClick={mark}>
-        {pending ? "Salvando…" : "É acompanhante"}
+    <div>
+      <button type="button" className="btn ghost sm nowrap" disabled={pending} onClick={run}>
+        {pending ? "Salvando…" : `Voltar para conferência${no ? ` · ${no}` : ""}`}
       </button>
       {err ? <div className="sub" role="alert" style={{ color: "var(--red-700)" }}>{err}</div> : null}
-    </>
+    </div>
   );
 }
 

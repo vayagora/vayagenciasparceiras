@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { dealStage, expEnd, expStatus, isDone, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
 import { dealNo, RULE_TIP, type Resolved } from "@/lib/matching";
-import type { Mate, ReviewPerson } from "@/lib/ledger";
+import { isJointDeal, type Mate, type PendingReason, type ReviewPerson } from "@/lib/ledger";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
@@ -55,30 +55,37 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
       com: primaryWon.length ? l.com.total : null,
       hsNote: l.note,
       group: l.group,
-      multi: l.multi,
+      approved: l.approved.map((r) => ({ dealId: r.deal.id, no: dealNo(r.deal) })),
       matesTxt: matesTxt(l.mates),
     };
   });
+
+  // Parceiro: só os nomes dos passageiros pendentes dos negócios da própria agência
+  const partnerPending = isVay ? [] : ledger.agencyPendingPeople(exp.id).map((p) => p.name);
 
   // Conferência (só Vay): abas A conferir / Conferidos
   const queue = isVay ? ledger.reviewQueue(exp) : { pending: [], done: [] };
   const tab = isVay && (sp.aba === "conferir" || sp.aba === "conferidos") ? sp.aba : "passageiros";
   const routeOf = (d: Resolved["deal"]) =>
     d.legs.length ? `${d.legs.map((l) => `${l.city} ${dm(l.date)}`).join(" → ")} · volta ${fmtDate(d.end_date)}` : "";
+  const REASON: Record<PendingReason, { label: string; tone: "yellow" | "red" | "neutral" }> = {
+    conjunto: { label: "Negócio conjunto (vários passageiros)", tone: "yellow" },
+    composicao: { label: "Mudou a composição do negócio", tone: "yellow" },
+    nao_sinalizado: { label: "Não sinalizado no HubSpot", tone: "red" },
+    outro: { label: "Pendência em outro negócio do grupo", tone: "neutral" },
+  };
   const reviewRow = (p: ReviewPerson, i: number, all: ReviewPerson[]): ReviewRow => ({
     key: p.key,
     name: p.name,
     email: p.email,
-    reasons: p.reasons.map((x) =>
-      x === "acompanhante"
-        ? { label: "Acompanhante · fora da expedição", tone: "neutral" as const }
-        : { label: "Não sinalizado no HubSpot", tone: "red" as const },
-    ),
-    kind: p.review?.kind ?? null,
+    reasons: p.reasons.map((x) => REASON[x]),
+    canConfer: p.deals.some((r) => r.deal.signaled === false),
     group: p.group,
     sub: i > 0 && all[i - 1].group === p.group,
     matesTxt: matesTxt(p.mates) ?? "",
     deals: p.deals.map((r) => ({
+      id: r.deal.id,
+      canApprove: r.deal.signaled !== false && isJointDeal(r.deal),
       no: dealNo(r.deal),
       url: hsUrl(r.deal.hubspot_id),
       stage: stageOf(dealStage(r.deal)).label,
@@ -88,10 +95,14 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
           ? r.fixes.length
             ? `${dealNo(r.deal)}: ${r.fixes.join("; ")}.`
             : `${dealNo(r.deal)}: confira a origem e a empresa associada.`
-          : "—",
+          : isJointDeal(r.deal)
+            ? ledger.approvalOf(exp.id, r.deal.id)
+              ? `${dealNo(r.deal)}: entrou ou saiu alguém do negócio desde a conferência. Confira e marque de novo.`
+              : `${dealNo(r.deal)}: se todos viajam, “Marcar como passageiros”. Se alguém não viaja, separe os negócios no HubSpot.`
+            : `${dealNo(r.deal)}: aguarda a conferência do outro negócio do passageiro.`,
     })),
     reviewed: p.review
-      ? `${p.review.kind === "acompanhante" ? "Marcado como acompanhante" : "Conferido"}${p.review.reviewed_by_name ? ` por ${p.review.reviewed_by_name}` : ""} em ${fmtDate(p.review.reviewed_at.slice(0, 10))}`
+      ? `Conferido${p.review.reviewed_by_name ? ` por ${p.review.reviewed_by_name}` : ""} em ${fmtDate(p.review.reviewed_at.slice(0, 10))}`
       : null,
   });
   const tabs: [string, string, number][] = [
@@ -132,9 +143,9 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
               total={brl(t.total)}
               deals={t.deals}
               ended={isDone(exp)}
-              multi={ledger.multiDeals(exp.id).map((r) => ({
+              blocked={ledger.pendingAgencyDeals(exp.id).map((r) => ({
                 no: dealNo(r.deal),
-                names: ledger.onList(r.deal, exp.id).map((p) => p.name),
+                names: r.deal.passengers.filter((x) => x.is_passenger !== false).map((x) => x.name),
               }))}
             />
           )
@@ -205,8 +216,8 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
               <h2 className="section-title">{tab === "conferir" ? "A conferir" : "Conferidos"}</h2>
               <Tip>
                 {tab === "conferir"
-                  ? "Passageiros de negócios não sinalizados no HubSpot (sem a Origem “Agência parceira” ou sem a empresa da agência) com destino e datas desta expedição. Se for erro no HubSpot, corrija lá: na próxima sincronização o passageiro vai para Passageiros. Se não for cliente desta expedição, marque como conferido."
-                  : "Passageiros conferidos pela Vay e acompanhantes tirados da lista (não são da expedição). Não aparecem para o parceiro e não voltam nas próximas sincronizações; dá para desfazer."}
+                  ? "Passageiros com pendência nesta expedição: negócio conjunto da agência ainda não conferido (se todos viajam, “Marcar como passageiros”; se alguém não viaja, separe os negócios no HubSpot), composição que mudou, ou negócio não sinalizado no HubSpot (corrija lá ou marque como conferido). Quem está no mesmo negócio fica junto."
+                  : "Passageiros de negócios não sinalizados que a Vay conferiu e que não são desta expedição. Não aparecem para o parceiro e não voltam nas próximas sincronizações; dá para desfazer."}
               </Tip>
             </div>
           </div>
@@ -218,6 +229,21 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
           />
         </section>
       )}
+      {!isVay && partnerPending.length ? (
+        <section className="card pad stack" style={{ gap: 8 }}>
+          <div className="ttl">
+            <h2 className="section-title">Pendências de lançamento</h2>
+            <Badge tone="yellow">{partnerPending.length}</Badge>
+            <Tip>
+              Passageiros desta expedição cujas compras a equipe Vay Agora ainda está conferindo. Assim que forem conferidas,
+              eles passam para a lista acima, com os valores e o seu ganho.
+            </Tip>
+          </div>
+          <ul className="agr-list">
+            {partnerPending.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        </section>
+      ) : null}
     </>
   );
 }

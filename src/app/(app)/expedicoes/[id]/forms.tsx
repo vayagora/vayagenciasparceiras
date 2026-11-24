@@ -3,34 +3,32 @@
 import { useRef, useState, useTransition } from "react";
 import { finishExpedition, reopenExpedition, type FormState } from "../../actions";
 
-// Vay: conclui a expedição (SPEC 2.4). Com negócios de vários passageiros, pede a confirmação de que os
-// acompanhantes foram conferidos. Registra o valor apurado; o crédito é lançado no HubSpot.
+// Vay: conclui a expedição (SPEC 2.4). Bloqueada enquanto houver negócio da agência em "A conferir".
+// Registra o valor apurado; o crédito é lançado no HubSpot.
 export function ConcludeExpedition({
   expId,
   expName,
   total,
   deals,
   ended,
-  multi,
+  blocked,
 }: {
   expId: string;
   expName: string;
   total: string;
   deals: number;
   ended: boolean;
-  multi: { no: string; names: string[] }[];
+  blocked: { no: string; names: string[] }[];
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [state, setState] = useState<FormState>(undefined);
-  const [checked, setChecked] = useState(false);
   const [pending, start] = useTransition();
   const run = () =>
     start(async () => {
-      const r = await finishExpedition(expId, checked);
+      const r = await finishExpedition(expId);
       setState(r);
       if (r?.ok) ref.current?.close();
     });
-  const blocked = multi.length > 0 && !checked;
   return (
     <>
       <button type="button" className="btn primary" onClick={() => ref.current?.showModal()}>
@@ -52,24 +50,20 @@ export function ConcludeExpedition({
             como concluída.
           </p>
 
-          {multi.length ? (
+          {blocked.length ? (
             <div className="note" style={{ borderColor: "var(--yellow-300)", background: "var(--yellow-50)" }}>
               <p className="strong" style={{ color: "var(--text-strong)" }}>
-                {multi.length === 1 ? "1 negócio tem" : `${multi.length} negócios têm`} vários passageiros. Confira se algum
-                é acompanhante (não é da expedição).
+                Ainda {blocked.length === 1 ? "há 1 negócio da agência" : `há ${blocked.length} negócios da agência`} em “A conferir”.
+                Resolva antes de concluir, senão {blocked.length === 1 ? "ele fica" : "eles ficam"} fora da apuração.
               </p>
               <ul className="agr-list small">
-                {multi.map((m) => (
+                {blocked.map((m) => (
                   <li key={m.no}>
                     <strong>{m.no}</strong>: {m.names.join(", ")}
                   </li>
                 ))}
               </ul>
-              <p className="small muted">Para tirar um acompanhante, use “É acompanhante” na linha dele, na aba Passageiros.</p>
-              <label className="row small" style={{ gap: 8, flexWrap: "nowrap", alignItems: "flex-start" }}>
-                <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
-                <span>Conferi os negócios com vários passageiros e está tudo certo.</span>
-              </label>
+              <p className="small muted">Veja a aba “A conferir”: marque como passageiros ou corrija no HubSpot.</p>
             </div>
           ) : null}
 
@@ -79,7 +73,7 @@ export function ConcludeExpedition({
           </p>
           {state?.error ? <div className="error" role="alert">{state.error}</div> : null}
           <div className="row">
-            <button type="button" className="btn primary" disabled={pending || blocked} onClick={run}>
+            <button type="button" className="btn primary" disabled={pending || blocked.length > 0} onClick={run}>
               {pending ? "Concluindo…" : "Concluir expedição"}
             </button>
             <button type="button" className="btn ghost" onClick={() => ref.current?.close()}>Cancelar</button>

@@ -198,52 +198,69 @@ describe("lista de clientes = passageiros dos negócios", () => {
   const casal = () =>
     deal({ passengers: [pax("Emerson", { is_titular: true }), pax("Gislaine")], voo: 15000, hotel: 0, seguro: 0 });
 
-  it("negócio da agência com 2 passageiros vai para a lista: duas linhas juntas, valores só na do titular, comissão uma vez", () => {
+  const approve = (d: Deal, keys: string[], exp = "eMad") => ({ id: `ap-${d.id}`, expedition_id: exp, deal_id: d.id, passenger_keys: keys, approved_by_name: "Ana", approved_at: "" });
+
+  it("negócio conjunto da agência fica em A conferir (os dois juntos) e não remunera até a Vay marcar", () => {
     const l = new Ledger([casal()], [partner], [madrid]);
-    const lines = l.lines(madrid);
-    expect(lines.map((x) => [x.name, x.multi, x.group === lines[0].group])).toEqual([["Emerson", true, true], ["Gislaine", true, true]]);
-    expect(lines[0].com.total).toBeCloseTo(450);
-    expect(lines[1].com.total).toBe(0);
-    expect(lines[1].mates).toEqual([{ key: "c:hs-Emerson", name: "Emerson", dealNo: expect.any(String), where: "passageiros" }]);
-    expect(l.paid.length).toBe(1);
-    expect(l.pendingFor(madrid)).toBe(0);
-    expect(l.multiDeals("eMad").length).toBe(1);
-  });
-
-  it("acompanhante marcado pela Vay: sai da lista, vai para Conferidos com o rastreio; o negócio continua remunerando", () => {
-    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Gislaine", person_name: "Gislaine", kind: "acompanhante" as const, reviewed_by_name: "Ana", reviewed_at: "2026-11-19T12:00:00Z" };
-    const l = new Ledger([casal()], [partner], [madrid], [review]);
-    expect(l.lines(madrid).map((x) => [x.name, x.mates[0]?.where])).toEqual([["Emerson", "conferidos"]]);
-    const q = l.reviewQueue(madrid);
-    expect(q.pending).toEqual([]);
-    expect(q.done.map((p) => [p.name, p.reasons, p.mates[0]?.where])).toEqual([["Gislaine", ["acompanhante"], "passageiros"]]);
-    expect(l.earnings("eMad").total).toBeCloseTo(450);
-    // marcação de outra expedição não vale aqui
-    expect(new Ledger([casal()], [partner], [madrid], [{ ...review, expedition_id: "outra" }]).lines(madrid).length).toBe(2);
-  });
-
-  it("titular marcado como acompanhante: valores passam para o passageiro que fica", () => {
-    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Emerson", person_name: "Emerson", kind: "acompanhante" as const, reviewed_by_name: "Ana", reviewed_at: "" };
-    const [gi] = new Ledger([casal()], [partner], [madrid], [review]).lines(madrid);
-    expect([gi.name, gi.com.total]).toEqual(["Gislaine", 450]);
-  });
-
-  it("todos do negócio marcados como acompanhante: o negócio sai da lista e não remunera", () => {
-    const r = (k: string) => ({ id: k, expedition_id: "eMad", person_key: `c:hs-${k}`, person_name: k, kind: "acompanhante" as const, reviewed_by_name: "", reviewed_at: "" });
-    const l = new Ledger([casal()], [partner], [madrid], [r("Emerson"), r("Gislaine")]);
     expect(l.lines(madrid)).toEqual([]);
     expect(l.paid).toEqual([]);
+    const q = l.reviewQueue(madrid);
+    expect(q.pending.map((p) => [p.name, p.reasons, p.group === q.pending[0].group])).toEqual([["Emerson", ["conjunto"], true], ["Gislaine", ["conjunto"], true]]);
+    expect(l.pendingAgencyDeals("eMad").length).toBe(1);
+    expect(l.agencyPendingPeople("eMad").map((p) => p.name)).toEqual(["Emerson", "Gislaine"]);
+  });
+
+  it("marcado como passageiros: os dois vão para a lista, juntos; valores só na do titular; remunera uma vez", () => {
+    const d = casal();
+    const l = new Ledger([d], [partner], [madrid], { approvals: [approve(d, ["c:hs-Emerson", "c:hs-Gislaine"])] });
+    const lines = l.lines(madrid);
+    expect(lines.map((x) => [x.name, x.com.total, x.approved.length])).toEqual([["Emerson", 450, 1], ["Gislaine", 0, 1]]);
+    expect(lines[0].group).toBe(lines[1].group);
+    expect(l.pendingFor(madrid)).toBe(0);
+    expect(l.earnings("eMad").total).toBeCloseTo(450);
+  });
+
+  it("entrou ou saiu alguém do negócio depois da conferência: volta todo mundo para A conferir", () => {
+    const d = deal({ passengers: [pax("Emerson", { is_titular: true }), pax("Gislaine"), pax("Caio")] });
+    const l = new Ledger([d], [partner], [madrid], { approvals: [approve(d, ["c:hs-Emerson", "c:hs-Gislaine"])] });
+    expect(l.lines(madrid)).toEqual([]);
+    expect(l.reviewQueue(madrid).pending.map((p) => p.reasons)).toEqual([["composicao"], ["composicao"], ["composicao"]]);
+  });
+
+  it("qualquer pendência do passageiro deixa ele inteiro (e o grupo dele) em A conferir", () => {
+    const em = pax("Emerson", { is_titular: true });
+    const gi = pax("Gislaine");
+    const joint = deal({ passengers: [em, gi] });
+    const seguro = deal({ passengers: [em], voo: 0, hotel: 0, seguro: 600 });
+    // Gislaine tem um negócio não sinalizado na mesma expedição
+    const unsig = deal({ signaled: false, afiliado: "", hs_origem: "Afiliado", hs_agency: "Horizonte Eventos", passengers: [gi] });
+    const l = new Ledger([joint, seguro, unsig], [partner], [madrid], { approvals: [approve(joint, ["c:hs-Emerson", "c:hs-Gislaine"])] });
+    expect(l.lines(madrid)).toEqual([]); // o conjunto aprovado volta por causa da Gislaine; o seguro do Emerson vai junto
+    const q = l.reviewQueue(madrid);
+    expect(q.pending.map((p) => [p.name, p.reasons.sort()])).toEqual([["Emerson", ["outro"]], ["Gislaine", ["nao_sinalizado"]]]);
+    expect(l.paid).toEqual([]);
+    // Vay confere o negócio não sinalizado da Gislaine (não é da expedição): tudo volta para a lista
+    const conf = { id: "r", expedition_id: "eMad", person_key: "c:hs-Gislaine", person_name: "Gislaine", reviewed_by_name: "", reviewed_at: "" };
+    const ok = new Ledger([joint, seguro, unsig], [partner], [madrid], { reviews: [conf], approvals: [approve(joint, ["c:hs-Emerson", "c:hs-Gislaine"])] });
+    expect(ok.lines(madrid).map((x) => x.name)).toEqual(["Emerson", "Gislaine"]);
+    expect(ok.reviewQueue(madrid).done).toEqual([]); // conferida, mas está na lista: não aparece em Conferidos
+  });
+
+  it("parceiro usa as pendências gravadas pelo sistema", () => {
+    const l = new Ledger([deal({ passengers: [pax("Ana", { is_titular: true })] })], [partner], [madrid], {
+      storedPending: [{ expedition_id: "eMad", person_key: "c:hs-Ana", person_name: "Ana" }],
+    });
+    expect(l.lines(madrid)).toEqual([]);
+    expect(l.agencyPendingPeople("eMad").map((p) => p.name)).toEqual(["Ana"]);
   });
 
   it("ordem alfabética, com quem está no mesmo negócio junto (sub-linha)", () => {
+    const jointBZ = deal({ passengers: [pax("Bruno", { is_titular: true }), pax("Zélia")] });
     const l = new Ledger(
-      [
-        deal({ passengers: [pax("Caio", { is_titular: true })] }),
-        deal({ passengers: [pax("Bruno", { is_titular: true }), pax("Zélia")] }),
-        deal({ passengers: [pax("Ana", { is_titular: true })] }),
-      ],
+      [deal({ passengers: [pax("Caio", { is_titular: true })] }), jointBZ, deal({ passengers: [pax("Ana", { is_titular: true })] })],
       [partner],
       [madrid],
+      { approvals: [approve(jointBZ, ["c:hs-Bruno", "c:hs-Zélia"])] },
     );
     expect(l.lines(madrid).map((x) => x.name)).toEqual(["Ana", "Bruno", "Zélia", "Caio"]);
   });

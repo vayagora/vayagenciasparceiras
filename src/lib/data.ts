@@ -2,7 +2,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { Ledger } from "./ledger";
 import { createClient } from "./supabase/server";
-import type { CreditEntry, Deal, Expedition, ExpeditionReview, Partner, Passenger, Profile } from "./types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CreditEntry, Deal, Expedition, ExpeditionApproval, ExpeditionPending, ExpeditionReview, Partner, Passenger, Profile } from "./types";
 
 export type Session = {
   profile: Profile;
@@ -54,13 +55,20 @@ export type World = {
   deals: Deal[];
   credits: CreditEntry[];
   reviews: ExpeditionReview[];
+  approvals: ExpeditionApproval[];
   ledger: Ledger;
 };
 
 // Carrega tudo o que o usuário pode ver (as regras de acesso do banco já filtram por parceiro).
 export const loadWorld = cache(async (): Promise<World> => {
-  const supabase = await createClient();
-  const [partners, exps, deals, passengers, credits, reviews] = await Promise.all([
+  const s = await getSession();
+  return buildWorld(await createClient(), !!s?.isVay);
+});
+
+// fullView = Vay (ou o sistema, com a chave de serviço): calcula as pendências a partir de tudo.
+// Parceiro: usa as pendências gravadas pelo sistema (ele não enxerga os negócios não sinalizados).
+export async function buildWorld(supabase: SupabaseClient, fullView: boolean): Promise<World> {
+  const [partners, exps, deals, passengers, credits, reviews, approvals, pending] = await Promise.all([
     supabase.from("partners").select("*").order("name"),
     supabase.from("expeditions").select("*").order("start_date"),
     supabase.from("deals").select("*").order("closed_on", { ascending: false, nullsFirst: false }),
@@ -70,8 +78,11 @@ export const loadWorld = cache(async (): Promise<World> => {
     supabase.from("credit_entries").select("*").order("created_on", { ascending: false }),
     // Conferência: só a Vay recebe linhas (RLS); para o parceiro vem vazio
     supabase.from("expedition_reviews").select("*"),
+    // Negócios conjuntos aprovados e pendências calculadas (o parceiro lê os das próprias expedições)
+    supabase.from("expedition_approvals").select("*"),
+    supabase.from("expedition_pending").select("*"),
   ]);
-  for (const r of [partners, exps, deals, passengers, credits, reviews]) {
+  for (const r of [partners, exps, deals, passengers, credits, reviews, approvals, pending]) {
     if (r.error) throw new Error(r.error.message);
   }
   const byDeal = new Map<string, Passenger[]>();
@@ -96,6 +107,12 @@ export const loadWorld = cache(async (): Promise<World> => {
     })),
     credits: ((credits.data ?? []) as CreditEntry[]).map((c) => ({ ...c, amount: Number(c.amount) })),
     reviews: (reviews.data ?? []) as ExpeditionReview[],
+    approvals: (approvals.data ?? []) as ExpeditionApproval[],
   };
-  return { ...w, ledger: new Ledger(w.deals, w.partners, w.exps, w.reviews) };
-});
+  const ledger = new Ledger(w.deals, w.partners, w.exps, {
+    reviews: w.reviews,
+    approvals: w.approvals,
+    storedPending: fullView ? null : ((pending.data ?? []) as ExpeditionPending[]),
+  });
+  return { ...w, ledger };
+}

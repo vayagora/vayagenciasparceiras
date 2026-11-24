@@ -170,8 +170,6 @@ export type ExpeditionReview = {
   expedition_id: string;
   person_key: string;
   person_name: string;
-  // conferido = negócio não sinalizado conferido; acompanhante = tirado da lista (não é da expedição)
-  kind?: "conferido" | "acompanhante";
   reviewed_by_name: string;
   reviewed_at: string;
 };
@@ -187,3 +185,16 @@ export type CreditEntry = {
   reason: string;
   amount: number; // com sinal
 };
+
+// Negócio conjunto aprovado pela Vay ("Marcar como passageiros"), com os passageiros daquele momento (SPEC 2.4)
+export type ExpeditionApproval = {
+  id: string;
+  expedition_id: string;
+  deal_id: string;
+  passenger_keys: string[];
+  approved_by_name: string;
+  approved_at: string;
+};
+
+// Passageiro pendente de negócio da agência (calculado pelo sistema; o parceiro lê os das próprias expedições)
+export type ExpeditionPending = { expedition_id: string; person_key: string; person_name: string };

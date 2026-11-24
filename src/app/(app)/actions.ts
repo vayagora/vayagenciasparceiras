@@ -5,9 +5,12 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AIRPORTS } from "@/lib/airports";
 import { loadWorld, requireVay } from "@/lib/data";
+import { personKey } from "@/lib/ledger";
+import { dealNo } from "@/lib/matching";
 import { brl, dayNum, lower, plural } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
+import { refreshPending } from "@/lib/pending";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -59,6 +62,7 @@ export async function createExpedition(_: FormState, f: FormData): Promise<FormS
     .single();
   if (error || !data) return { error: "Não foi possível criar a expedição." };
 
+  await refreshPending(createAdminClient()).catch(() => undefined);
   revalidatePath("/", "layout");
   redirect(`/expedicoes/${data.id}`);
 }
@@ -66,18 +70,18 @@ export async function createExpedition(_: FormState, f: FormData): Promise<FormS
 // ---------------------------------------------------------------- Conclusão da expedição (SPEC 2.4)
 
 // A Vay conclui a expedição: o ganho (negócios ganhos da lista, calculado agora) fica registrado como valor apurado,
-// congelado. O crédito em si é lançado pela equipe no HubSpot (objeto Créditos da empresa) e aparece no extrato na
-// sincronização (SPEC 2.3). Com negócios de vários passageiros, a Vay precisa confirmar que conferiu os acompanhantes.
-export async function finishExpedition(expId: string, multiChecked = false): Promise<FormState> {
+// congelado. O crédito é lançado pela equipe no HubSpot (objeto Créditos da empresa) e aparece no extrato na
+// sincronização (SPEC 2.3). Bloqueada enquanto houver negócio da agência em "A conferir" (ficaria fora da apuração).
+export async function finishExpedition(expId: string): Promise<FormState> {
   const s = await requireVay();
   const supabase = await createClient();
   const { exps, ledger } = await loadWorld();
   const exp = exps.find((e) => e.id === expId);
   if (!exp) return { error: "Expedição não encontrada." };
   if (exp.finished_at) return { error: "Esta expedição já foi concluída." };
-  const multi = ledger.multiDeals(exp.id).length;
-  if (multi > 0 && !multiChecked)
-    return { error: `Confira antes os ${plural(multi, "negócio", "negócios")} com vários passageiros para ver se há acompanhante.` };
+  const blocked = ledger.pendingAgencyDeals(exp.id);
+  if (blocked.length)
+    return { error: `Ainda há ${plural(blocked.length, "negócio da agência", "negócios da agência")} em “A conferir”: ${blocked.map((r) => dealNo(r.deal)).join(", ")}.` };
 
   const deals = ledger.dealsForExp(exp.id);
   const total = Math.round(ledger.earnings(exp.id).total * 100) / 100;
@@ -115,42 +119,81 @@ export async function reopenExpedition(expId: string): Promise<FormState> {
 
 // ---------------------------------------------------------------- Conferência (SPEC 2.4)
 
-// A Vay marca um passageiro como conferido (negócio não sinalizado) ou acompanhante (tirado da lista), ou desfaz.
-// "Passageiros" é preenchido apenas pela sincronização; desfazer devolve a pessoa para onde as regras a põem.
-export async function setPersonReviewed(
-  expId: string,
-  personKey: string,
-  personName: string,
-  reviewed: boolean,
-  kind: "conferido" | "acompanhante" = "conferido",
-): Promise<FormState> {
+// Depois de cada marcação, atualiza as pendências que o parceiro vê (falha aqui não desfaz a marcação).
+async function afterReview(): Promise<void> {
+  try {
+    await refreshPending(createAdminClient());
+  } catch {
+    // na próxima sincronização as pendências são recalculadas
+  }
+  revalidatePath("/", "layout");
+}
+
+// Negócio conjunto da agência: "Marcar como passageiros" (o negócio inteiro, com os passageiros de agora).
+// Se depois entrar ou sair alguém do negócio no HubSpot, ele volta sozinho para "A conferir".
+export async function approveJointDeal(expId: string, dealId: string): Promise<FormState> {
   const s = await requireVay();
-  if (!/^(c|n|d):.+/.test(personKey)) return { error: "Passageiro inválido." };
-  if (kind !== "conferido" && kind !== "acompanhante") return { error: "Marcação inválida." };
+  const { ledger } = await loadWorld();
+  const r = ledger.agencyDeals(expId).find((x) => x.deal.id === dealId);
+  if (!r) return { error: "Negócio não encontrado nesta expedição (ou não sinalizado no HubSpot)." };
+  const keys = r.deal.passengers.filter((p) => p.is_passenger !== false).map((p) => personKey(p));
+  if (keys.length < 2) return { error: "Este negócio não é conjunto." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("expedition_approvals").upsert(
+    {
+      expedition_id: expId,
+      deal_id: dealId,
+      passenger_keys: keys,
+      approved_by: s.profile.id,
+      approved_by_name: s.profile.full_name || s.profile.email,
+      approved_at: new Date().toISOString(),
+    },
+    { onConflict: "expedition_id,deal_id" },
+  );
+  if (error) return { error: "Não foi possível salvar." };
+  await afterReview();
+  return { ok: "Passageiros do negócio marcados." };
+}
+
+// Devolve um negócio conjunto aprovado para "A conferir" (o negócio inteiro).
+export async function unapproveJointDeal(expId: string, dealId: string): Promise<FormState> {
+  await requireVay();
+  const supabase = await createClient();
+  const { error } = await supabase.from("expedition_approvals").delete().eq("expedition_id", expId).eq("deal_id", dealId);
+  if (error) return { error: "Não foi possível salvar." };
+  await afterReview();
+  return { ok: "Negócio voltou para a conferência." };
+}
+
+// Negócio não sinalizado: a Vay marca o passageiro como conferido (não é da expedição) ou desfaz.
+export async function setPersonReviewed(expId: string, key: string, personName: string, reviewed: boolean): Promise<FormState> {
+  const s = await requireVay();
+  if (!/^(c|n|d):.+/.test(key)) return { error: "Passageiro inválido." };
   const supabase = await createClient();
   const { error } = reviewed
     ? await supabase.from("expedition_reviews").upsert(
         {
           expedition_id: expId,
-          person_key: personKey,
+          person_key: key,
           person_name: personName.slice(0, 200),
-          kind,
           reviewed_by: s.profile.id,
           reviewed_by_name: s.profile.full_name || s.profile.email,
           reviewed_at: new Date().toISOString(),
         },
         { onConflict: "expedition_id,person_key" },
       )
-    : await supabase.from("expedition_reviews").delete().eq("expedition_id", expId).eq("person_key", personKey);
+    : await supabase.from("expedition_reviews").delete().eq("expedition_id", expId).eq("person_key", key);
   if (error) return { error: "Não foi possível salvar." };
-  revalidatePath("/", "layout");
-  return { ok: reviewed ? (kind === "acompanhante" ? "Marcado como acompanhante." : "Marcado como conferido.") : "Marcação desfeita." };
+  await afterReview();
+  return { ok: reviewed ? "Marcado como conferido." : "Voltou para a conferir." };
 }
 
 // Sincronização sob demanda (a agendada usa /api/cron/sync).
 export async function syncNow(): Promise<FormState> {
   await requireVay();
-  const r = await syncHubspot(createAdminClient());
+  const admin = createAdminClient();
+  const r = await syncHubspot(admin);
+  if (r.ok) await refreshPending(admin).catch(() => undefined);
   revalidatePath("/", "layout");
   if (!r.ok) return { error: `Falha na sincronização: ${r.error}` };
   return {

@@ -1,20 +1,22 @@
 "use client";
 
-// Conferência da expedição (só Vay, SPEC 2.4). "A conferir": negócios não sinalizados (a Vay marca como conferido ou
-// corrige no HubSpot). "Conferidos": conferidos e acompanhantes tirados da lista; desfazer devolve a pessoa.
-// Pessoas do mesmo negócio ficam juntas; o rastreio mostra onde estão os outros passageiros do negócio.
+// Conferência da expedição (só Vay, SPEC 2.4).
+// "A conferir": passageiros com pendência (negócio conjunto da agência ainda não marcado, composição que mudou,
+// negócio não sinalizado, ou outro negócio pendente de alguém do mesmo grupo). Negócio conjunto: "Marcar como
+// passageiros" (o negócio inteiro). Não sinalizado: corrigir no HubSpot ou "Marcar como conferido".
+// "Conferidos": passageiros de negócios não sinalizados que a Vay conferiu (não são da expedição); dá para desfazer.
 import { useState, useTransition } from "react";
 import type { Tone } from "@/lib/commission";
-import { setPersonReviewed } from "../../actions";
+import { approveJointDeal, setPersonReviewed } from "../../actions";
 
 export type ReviewRow = {
   key: string;
   name: string;
   email: string;
   reasons: { label: string; tone: Tone }[];
-  deals: { no: string; url: string | null; stage: string; route: string; fix: string }[];
+  deals: { id: string; no: string; url: string | null; stage: string; route: string; fix: string; canApprove: boolean }[];
+  canConfer: boolean; // tem negócio não sinalizado: pode marcar como conferido
   reviewed: string | null; // "Conferido por X em dd/mm/aaaa"
-  kind: "conferido" | "acompanhante" | null;
   group: string;
   sub: boolean; // mesmo negócio da linha acima
   matesTxt: string;
@@ -23,13 +25,13 @@ export type ReviewRow = {
 export function ReviewTable({ expId, rows, done, emptyText }: { expId: string; rows: ReviewRow[]; done: boolean; emptyText: string }) {
   return (
     <div className="table-wrap">
-      <table className="tbl clients" style={{ minWidth: 860 }}>
+      <table className="tbl clients" style={{ minWidth: 900 }}>
         <thead>
           <tr>
             <th>Passageiro</th>
             <th>Motivo</th>
             <th>Negócio no HubSpot</th>
-            <th>O que corrigir no HubSpot</th>
+            <th>O que fazer</th>
             <th><span className="sr-only">Ação</span></th>
           </tr>
         </thead>
@@ -47,9 +49,9 @@ export function ReviewTable({ expId, rows, done, emptyText }: { expId: string; r
 function Row({ expId, r, done }: { expId: string; r: ReviewRow; done: boolean }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
-  const toggle = () =>
+  const run = (fn: () => Promise<{ error?: string } | undefined>) =>
     start(async () => {
-      const res = await setPersonReviewed(expId, r.key, r.name, !done, r.kind ?? "conferido");
+      const res = await fn();
       setErr(res?.error ?? "");
     });
   return (
@@ -68,20 +70,31 @@ function Row({ expId, r, done }: { expId: string; r: ReviewRow; done: boolean })
       </td>
       <td>
         {r.deals.map((d) => (
-          <div key={d.no} style={{ marginBottom: 4 }}>
+          <div key={d.id} style={{ marginBottom: 6 }}>
             {d.url ? <a href={d.url} target="_blank" rel="noreferrer" className="strong">{d.no}</a> : <span className="strong">{d.no}</span>}
             <span className="muted"> · {d.stage}</span>
             <div className="sub">{d.route}</div>
+            {!done && !r.sub && d.canApprove ? (
+              <button type="button" className="btn outline sm" style={{ marginTop: 4 }} disabled={pending} onClick={() => run(() => approveJointDeal(expId, d.id))}>
+                Marcar como passageiros
+              </button>
+            ) : null}
           </div>
         ))}
       </td>
       <td className="small">
-        {r.deals.map((d) => <div key={d.no} style={{ marginBottom: 4 }}>{d.fix}</div>)}
+        {r.deals.map((d) => (d.fix ? <div key={d.id} style={{ marginBottom: 4 }}>{d.fix}</div> : null))}
       </td>
       <td>
-        <button type="button" className={`btn sm ${done ? "ghost" : "outline"}`} disabled={pending} onClick={toggle}>
-          {!done ? "Marcar como conferido" : r.kind === "acompanhante" ? "Voltar para Passageiros" : "Voltar para a conferir"}
-        </button>
+        {done ? (
+          <button type="button" className="btn ghost sm" disabled={pending} onClick={() => run(() => setPersonReviewed(expId, r.key, r.name, false))}>
+            Voltar para a conferir
+          </button>
+        ) : r.canConfer ? (
+          <button type="button" className="btn outline sm" disabled={pending} onClick={() => run(() => setPersonReviewed(expId, r.key, r.name, true))}>
+            Marcar como conferido
+          </button>
+        ) : null}
         {err ? <div className="sub" role="alert" style={{ color: "var(--red-700)" }}>{err}</div> : null}
       </td>
     </tr>

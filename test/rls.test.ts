@@ -151,7 +151,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(sql("0015_pendencias_de_lancamento.sql"));
     await db.query(sql("0016_creditos_hubspot.sql"));
-    await db.query(sql("0017_acompanhantes.sql"));
+    await db.query(sql("0017_negocio_conjunto.sql"));
     await db.query(GRANTS);
   });
 
@@ -176,17 +176,24 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     ]);
   });
 
-  it("0017: parceiro vê o negócio da agência com vários passageiros, menos o acompanhante marcado pela Vay", async () => {
-    await db.query(`update deals set matched_expedition_id = $1 where id = $2`, [ID.expA, ID.dealA]);
-    const names = () => as(ID.pa, async () => (await rows(`select name from deal_passengers where deal_id = $1 order by name`, [ID.dealA])).map((r) => r.name));
-    expect(await names()).toEqual(["Emerson Souza", "Gislaine Souza"]);
-    await db.query(`insert into expedition_reviews (expedition_id, person_key, person_name, kind) values ($1, 'c:902', 'Gislaine Souza', 'acompanhante')`, [ID.expA]);
-    expect(await names()).toEqual(["Emerson Souza"]);
-    expect(await as(ID.vay, () => rows(`select id from deal_passengers where deal_id = $1`, [ID.dealA]))).toHaveLength(2);
-    await expect(db.query(`update expedition_reviews set kind = 'outro'`)).rejects.toThrow(/check/);
-    await db.query(`delete from expedition_reviews`);
-    await db.query(`update deals set matched_expedition_id = null where id = $1`, [ID.dealA]);
+  it("0017: negócio conjunto: parceiro lê os negócios sinalizados da própria agência; aprovações e pendências só lê as próprias e não grava", async () => {
+    expect(await as(ID.pa, async () => (await rows(`select name from deal_passengers where deal_id = $1 order by name`, [ID.dealA])).map((r) => r.name))).toEqual([
+      "Emerson Souza",
+      "Gislaine Souza",
+    ]);
     expect(await as(ID.pb, () => rows(`select id from deals where id = $1`, [ID.dealA]))).toEqual([]);
+    await db.query(`insert into expedition_approvals (expedition_id, deal_id, passenger_keys, approved_by_name) values ($1, $2, '{c:901,c:902}', 'Ana')`, [ID.expA, ID.dealA]);
+    await db.query(`insert into expedition_pending (expedition_id, person_key, person_name) values ($1, 'c:903', 'Bia Lopes'), ($2, 'c:901', 'Emerson Souza')`, [ID.expB, ID.expA]);
+    await as(ID.pa, async () => {
+      expect(await rows(`select passenger_keys from expedition_approvals`)).toEqual([{ passenger_keys: ["c:901", "c:902"] }]);
+      expect(await rows(`select person_name from expedition_pending`)).toEqual([{ person_name: "Emerson Souza" }]);
+      await denied(`insert into expedition_approvals (expedition_id, deal_id, passenger_keys) values ($1, $2, '{}')`, [ID.expA, ID.legacy]);
+      await denied(`insert into expedition_pending (expedition_id, person_key) values ($1, 'c:1')`, [ID.expA]);
+      await expect(db.query(`delete from expedition_approvals`)).resolves.toMatchObject({ rowCount: 0 });
+    });
+    expect(await as(ID.pb, () => rows(`select person_name from expedition_pending`))).toEqual([{ person_name: "Bia Lopes" }]);
+    await db.query(`delete from expedition_approvals`);
+    await db.query(`delete from expedition_pending`);
   });
 
   it("0014: conferência por passageiro é só da Vay; uma marcação por pessoa na expedição", async () => {
@@ -405,7 +412,7 @@ describe.skipIf(!url)("RLS · regras de acesso", () => {
     await db.query(sql("0014_conferencia_por_passageiro.sql"));
     await db.query(sql("0015_pendencias_de_lancamento.sql"));
     await db.query(sql("0016_creditos_hubspot.sql"));
-    await db.query(sql("0017_acompanhantes.sql"));
+    await db.query(sql("0017_negocio_conjunto.sql"));
     await db.query(fs.readFileSync(path.resolve(MIG, "../seed_demo.sql"), "utf8"));
     const r = await rows(`select passenger_count from deals where hubspot_id = '4513'`);
     expect(r).toEqual([{ passenger_count: 2 }]);
