@@ -198,40 +198,54 @@ describe("lista de clientes = passageiros dos negócios", () => {
   const casal = () =>
     deal({ passengers: [pax("Emerson", { is_titular: true }), pax("Gislaine")], voo: 15000, hotel: 0, seguro: 0 });
 
-  it("negócio da agência com 2 passageiros não vai para a lista: os dois vão para A conferir e não remunera", () => {
+  it("negócio da agência com 2 passageiros vai para a lista: duas linhas juntas, valores só na do titular, comissão uma vez", () => {
     const l = new Ledger([casal()], [partner], [madrid]);
+    const lines = l.lines(madrid);
+    expect(lines.map((x) => [x.name, x.multi, x.group === lines[0].group])).toEqual([["Emerson", true, true], ["Gislaine", true, true]]);
+    expect(lines[0].com.total).toBeCloseTo(450);
+    expect(lines[1].com.total).toBe(0);
+    expect(lines[1].mates).toEqual([{ key: "c:hs-Emerson", name: "Emerson", dealNo: expect.any(String), where: "passageiros" }]);
+    expect(l.paid.length).toBe(1);
+    expect(l.pendingFor(madrid)).toBe(0);
+    expect(l.multiDeals("eMad").length).toBe(1);
+  });
+
+  it("acompanhante marcado pela Vay: sai da lista, vai para Conferidos com o rastreio; o negócio continua remunerando", () => {
+    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Gislaine", person_name: "Gislaine", kind: "acompanhante" as const, reviewed_by_name: "Ana", reviewed_at: "2026-11-19T12:00:00Z" };
+    const l = new Ledger([casal()], [partner], [madrid], [review]);
+    expect(l.lines(madrid).map((x) => [x.name, x.mates[0]?.where])).toEqual([["Emerson", "conferidos"]]);
+    const q = l.reviewQueue(madrid);
+    expect(q.pending).toEqual([]);
+    expect(q.done.map((p) => [p.name, p.reasons, p.mates[0]?.where])).toEqual([["Gislaine", ["acompanhante"], "passageiros"]]);
+    expect(l.earnings("eMad").total).toBeCloseTo(450);
+    // marcação de outra expedição não vale aqui
+    expect(new Ledger([casal()], [partner], [madrid], [{ ...review, expedition_id: "outra" }]).lines(madrid).length).toBe(2);
+  });
+
+  it("titular marcado como acompanhante: valores passam para o passageiro que fica", () => {
+    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Emerson", person_name: "Emerson", kind: "acompanhante" as const, reviewed_by_name: "Ana", reviewed_at: "" };
+    const [gi] = new Ledger([casal()], [partner], [madrid], [review]).lines(madrid);
+    expect([gi.name, gi.com.total]).toEqual(["Gislaine", 450]);
+  });
+
+  it("todos do negócio marcados como acompanhante: o negócio sai da lista e não remunera", () => {
+    const r = (k: string) => ({ id: k, expedition_id: "eMad", person_key: `c:hs-${k}`, person_name: k, kind: "acompanhante" as const, reviewed_by_name: "", reviewed_at: "" });
+    const l = new Ledger([casal()], [partner], [madrid], [r("Emerson"), r("Gislaine")]);
     expect(l.lines(madrid)).toEqual([]);
     expect(l.paid).toEqual([]);
-    const q = l.reviewQueue(madrid);
-    expect(q.pending.map((p) => [p.name, p.reasons])).toEqual([["Emerson", ["varios"]], ["Gislaine", ["varios"]]]);
-    expect(l.pendingFor(madrid)).toBe(2);
   });
 
-  it("separado no HubSpot (um negócio por passageiro): os dois vão direto para Passageiros", () => {
-    const em = pax("Emerson", { is_titular: true });
-    const gi = pax("Gislaine", { is_titular: true });
-    const l = new Ledger([deal({ passengers: [em], voo: 7500, hotel: 0, seguro: 0 }), deal({ passengers: [gi], voo: 7500, hotel: 0, seguro: 0 })], [partner], [madrid]);
-    expect(l.lines(madrid).map((x) => [x.name, x.com.total])).toEqual([["Emerson", 225], ["Gislaine", 225]]);
-    expect(l.pendingFor(madrid)).toBe(0);
-    expect(l.expStats(madrid)).toMatchObject({ n: 2, closed: 2, deals: 2, total: 450 });
-  });
-
-  it("conferido pela Vay: sai de A conferir, vai para Conferidos e não volta", () => {
-    const review = { id: "r1", expedition_id: "eMad", person_key: "c:hs-Gislaine", person_name: "Gislaine", reviewed_by_name: "Ana", reviewed_at: "2026-11-19T12:00:00Z" };
-    const l = new Ledger([casal()], [partner], [madrid], [review]);
-    const q = l.reviewQueue(madrid);
-    expect(q.pending.map((p) => p.name)).toEqual(["Emerson"]);
-    expect(q.done.map((p) => [p.name, p.review?.reviewed_by_name])).toEqual([["Gislaine", "Ana"]]);
-    // marcação de outra expedição não vale aqui
-    const other = new Ledger([casal()], [partner], [madrid], [{ ...review, expedition_id: "outra" }]);
-    expect(other.pendingFor(madrid)).toBe(2);
-  });
-
-  it("quem já está em Passageiros não volta para A conferir por outro negócio", () => {
-    const em = pax("Emerson", { is_titular: true });
-    const l = new Ledger([deal({ passengers: [em] }), deal({ passengers: [em, pax("Gislaine")] })], [partner], [madrid]);
-    expect(l.lines(madrid).map((x) => x.name)).toEqual(["Emerson"]);
-    expect(l.reviewQueue(madrid).pending.map((p) => p.name)).toEqual(["Gislaine"]);
+  it("ordem alfabética, com quem está no mesmo negócio junto (sub-linha)", () => {
+    const l = new Ledger(
+      [
+        deal({ passengers: [pax("Caio", { is_titular: true })] }),
+        deal({ passengers: [pax("Bruno", { is_titular: true }), pax("Zélia")] }),
+        deal({ passengers: [pax("Ana", { is_titular: true })] }),
+      ],
+      [partner],
+      [madrid],
+    );
+    expect(l.lines(madrid).map((x) => x.name)).toEqual(["Ana", "Bruno", "Zélia", "Caio"]);
   });
 
   it("a mesma pessoa em dois negócios (voo e seguro): uma linha, valores somados", () => {
@@ -261,18 +275,6 @@ describe("lista de clientes = passageiros dos negócios", () => {
     expect(lines[0].com.total).toBeCloseTo(450); // linha principal: o primeiro que viaja
   });
 
-  it("ordem: compra concluída primeiro, depois negociação, contato e não comprou", () => {
-    const l = new Ledger(
-      [
-        deal({ stage_kind: "lost", passengers: [pax("Zé", { is_titular: true })] }),
-        open({ hs_stage: "appointmentscheduled", passengers: [pax("Bia", { is_titular: true })] }),
-        deal({ passengers: [pax("Caio", { is_titular: true })] }),
-      ],
-      [partner],
-      [madrid],
-    );
-    expect(l.lines(madrid).map((x) => [x.name, x.stage])).toEqual([["Caio", "fechado"], ["Bia", "em_contato"], ["Zé", "perdido"]]);
-  });
 });
 
 // ---------------------------------------------------------------- Não sinalizados

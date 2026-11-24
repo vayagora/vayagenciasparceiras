@@ -1,7 +1,8 @@
 "use client";
 
-// Conferência da expedição (só Vay, SPEC 2.1). A Vay só alterna entre "A conferir" e "Conferidos";
-// para ir a "Passageiros", corrige no HubSpot e a próxima sincronização leva a pessoa para a lista.
+// Conferência da expedição (só Vay, SPEC 2.4). "A conferir": negócios não sinalizados (a Vay marca como conferido ou
+// corrige no HubSpot). "Conferidos": conferidos e acompanhantes tirados da lista; desfazer devolve a pessoa.
+// Pessoas do mesmo negócio ficam juntas; o rastreio mostra onde estão os outros passageiros do negócio.
 import { useState, useTransition } from "react";
 import type { Tone } from "@/lib/commission";
 import { setPersonReviewed } from "../../actions";
@@ -13,12 +14,16 @@ export type ReviewRow = {
   reasons: { label: string; tone: Tone }[];
   deals: { no: string; url: string | null; stage: string; route: string; fix: string }[];
   reviewed: string | null; // "Conferido por X em dd/mm/aaaa"
+  kind: "conferido" | "acompanhante" | null;
+  group: string;
+  sub: boolean; // mesmo negócio da linha acima
+  matesTxt: string;
 };
 
 export function ReviewTable({ expId, rows, done, emptyText }: { expId: string; rows: ReviewRow[]; done: boolean; emptyText: string }) {
   return (
     <div className="table-wrap">
-      <table className="tbl" style={{ minWidth: 860 }}>
+      <table className="tbl clients" style={{ minWidth: 860 }}>
         <thead>
           <tr>
             <th>Passageiro</th>
@@ -44,15 +49,17 @@ function Row({ expId, r, done }: { expId: string; r: ReviewRow; done: boolean })
   const [err, setErr] = useState("");
   const toggle = () =>
     start(async () => {
-      const res = await setPersonReviewed(expId, r.key, r.name, !done);
+      const res = await setPersonReviewed(expId, r.key, r.name, !done, r.kind ?? "conferido");
       setErr(res?.error ?? "");
     });
   return (
-    <tr style={{ opacity: pending ? 0.6 : 1 }}>
-      <td>
+    <tr className={r.sub ? "subrow" : undefined} style={{ opacity: pending ? 0.6 : 1 }}>
+      <td style={r.sub ? { paddingLeft: 28 } : undefined}>
+        {r.sub ? <span className="muted" aria-hidden="true">↳ </span> : null}
         <span className="strong">{r.name}</span>
         {r.email ? <div className="sub">{r.email}</div> : null}
         {r.reviewed ? <div className="sub">{r.reviewed}</div> : null}
+        {r.matesTxt ? <div className="sub">{r.matesTxt}</div> : null}
       </td>
       <td>
         <div className="stack" style={{ gap: 4, alignItems: "flex-start" }}>
@@ -73,7 +80,7 @@ function Row({ expId, r, done }: { expId: string; r: ReviewRow; done: boolean })
       </td>
       <td>
         <button type="button" className={`btn sm ${done ? "ghost" : "outline"}`} disabled={pending} onClick={toggle}>
-          {done ? "Voltar para a conferir" : "Marcar como conferido"}
+          {!done ? "Marcar como conferido" : r.kind === "acompanhante" ? "Voltar para Passageiros" : "Voltar para a conferir"}
         </button>
         {err ? <div className="sub" role="alert" style={{ color: "var(--red-700)" }}>{err}</div> : null}
       </td>

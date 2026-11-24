@@ -1,11 +1,13 @@
 "use client";
 
-// Tabela de clientes da expedição (SPEC 2.0, só leitura): os passageiros dos negócios da agência no HubSpot.
-// Filtros, ordenação e Excel. Etapa e observação vêm do HubSpot.
-import { useEffect, useMemo, useRef, useState } from "react";
+// Tabela de clientes da expedição (SPEC 2.4): os passageiros dos negócios da agência no HubSpot.
+// Filtros, ordenação (A–Z por grupo: quem está no mesmo negócio fica junto, como sub-linha) e Excel.
+// Etapa e observação vêm do HubSpot. A Vay pode marcar um passageiro como acompanhante (vai para Conferidos).
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Tone } from "@/lib/commission";
 import type { StageId } from "@/lib/types";
 import { buildXlsx, slug, type Cell } from "@/lib/xlsx";
+import { setPersonReviewed } from "../../actions";
 import { ProductCell, type ProductDeal } from "./ProductCell";
 
 type Product = "voo" | "hotel" | "seguro";
@@ -21,6 +23,12 @@ export type TableRow = {
   prods: { product: Product; primary: ProductDeal[]; included: ProductDeal[] }[];
   com: number | null; // null = "—" (valor está na linha principal de outro passageiro, ou ainda não comprou)
   hsNote: string;
+  // Pessoas do mesmo negócio ficam juntas (sub-linhas)
+  group: string;
+  // Negócio com vários passageiros (a Vay confere se há acompanhante)
+  multi: boolean;
+  // Rastreio (só Vay): outros passageiros do mesmo negócio e onde estão
+  matesTxt?: string;
 };
 
 export type Option = { value: string; label: string };
@@ -34,12 +42,15 @@ export function ClientsTable({
   stageOptions,
   expName,
   emptyText,
+  companionExpId,
 }: {
   rows: TableRow[];
   earnHeader: string;
   stageOptions: Option[];
   expName: string;
   emptyText: string;
+  // Vay: id da expedição para o botão "É acompanhante" (parceiro: ausente)
+  companionExpId?: string;
 }) {
   const [q, setQ] = useState("");
   const [fStage, setFStage] = useState("");
@@ -56,7 +67,13 @@ export function ClientsTable({
       if (fStage && r.stage.id !== fStage) return false;
       return true;
     });
-    return list.sort((a, b) => (asc ? 1 : -1) * fold(a.name).localeCompare(fold(b.name), "pt-BR"));
+    // Ordem alfabética por grupo: o grupo entra na posição do primeiro nome dele; dentro do grupo, A–Z.
+    const byName = (a: TableRow, b: TableRow) => fold(a.name).localeCompare(fold(b.name), "pt-BR");
+    const groups = new Map<string, TableRow[]>();
+    for (const r of [...list].sort(byName)) groups.set(r.group, [...(groups.get(r.group) ?? []), r]);
+    const ordered = [...groups.values()];
+    if (!asc) ordered.reverse();
+    return ordered.flatMap((g) => g.map((r, i) => ({ ...r, sub: i > 0 })));
   }, [rows, q, fStage, asc]);
 
   const filtered = !!(q.trim() || fStage);
@@ -162,14 +179,19 @@ export function ClientsTable({
               <th>Seguro</th>
               <th className="num">{earnHeader}</th>
               <th>Observação</th>
+              {companionExpId ? <th><span className="sr-only">Ação</span></th> : null}
             </tr>
           </thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.key}>
+              <tr key={r.key} className={r.sub ? "subrow" : r.multi ? "grouptop" : undefined}>
                 <td className="freeze">
+                  {r.sub ? <span className="muted" aria-hidden="true">↳ </span> : null}
                   <span className="strong">{r.name}</span>
+                  {r.sub ? <span className="sr-only"> (mesmo negócio do passageiro acima)</span> : null}
                   {r.email ? <div className="sub">{r.email}</div> : null}
+                  {r.multi && companionExpId ? <div style={{ marginTop: 4 }}><span className="badge yellow">Vários passageiros no negócio</span></div> : null}
+                  {r.matesTxt ? <div className="sub">{r.matesTxt}</div> : null}
                 </td>
                 <td>
                   <span className={`badge ${r.stage.tone} dot`}>{r.stage.label}</span>
@@ -198,11 +220,14 @@ export function ClientsTable({
                     <span className="muted">—</span>
                   )}
                 </td>
+                {companionExpId ? (
+                  <td>{r.multi ? <CompanionButton expId={companionExpId} personKey={r.key} name={r.name} /> : null}</td>
+                ) : null}
               </tr>
             ))}
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty">{rows.length ? "Nenhum cliente com esses filtros." : emptyText}</td>
+                <td colSpan={companionExpId ? 9 : 8} className="empty">{rows.length ? "Nenhum cliente com esses filtros." : emptyText}</td>
               </tr>
             ) : null}
           </tbody>
@@ -210,6 +235,27 @@ export function ClientsTable({
       </div>
 
       {noteRow ? <NoteModal row={noteRow} onClose={() => setNoteKey(null)} /> : null}
+    </>
+  );
+}
+
+// Vay: tira o passageiro da lista (não é da expedição). Vai para Conferidos; dá para desfazer lá.
+function CompanionButton({ expId, personKey, name }: { expId: string; personKey: string; name: string }) {
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState("");
+  const mark = () => {
+    if (!window.confirm(`Marcar ${name} como acompanhante? Ele sai da lista de passageiros (e da visão do parceiro) e vai para Conferidos.`)) return;
+    start(async () => {
+      const r = await setPersonReviewed(expId, personKey, name, true, "acompanhante");
+      setErr(r?.error ?? "");
+    });
+  };
+  return (
+    <>
+      <button type="button" className="btn outline sm nowrap" disabled={pending} onClick={mark}>
+        {pending ? "Salvando…" : "É acompanhante"}
+      </button>
+      {err ? <div className="sub" role="alert" style={{ color: "var(--red-700)" }}>{err}</div> : null}
     </>
   );
 }

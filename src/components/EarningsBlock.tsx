@@ -73,7 +73,7 @@ export function EarningsBlock({
         <div className="earn-bal">
           <span className="l">Saldo atual</span>
           <span className="v">{brl(st.balance)}</span>
-          <span className="s">A liberar {brl(pendingRelease)} · entra quando a expedição é finalizada</span>
+          <span className="s">A liberar {brl(pendingRelease)} · vira crédito quando a expedição é concluída</span>
           <Link href={isVay ? `/parceiros/${partner.id}/extrato` : "/extrato"}>Ver extrato</Link>
         </div>
         <div className="earn-stats">

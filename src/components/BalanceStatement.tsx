@@ -15,7 +15,7 @@ export function BalanceStatement({
 }: {
   partner: Partner;
   statement: Statement;
-  // Ganho das expedições ainda não finalizadas
+  // Ganho das expedições ainda não concluídas
   toRelease: { id: string; name: string; total: number }[];
   isVay: boolean;
   basePath: string;

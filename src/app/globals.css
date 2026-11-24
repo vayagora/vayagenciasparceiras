@@ -337,3 +337,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .dealrow-txt { flex: 1 1 160px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
 .dealrow-com { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; flex: none; }
 .nowrap { white-space: nowrap; }
+
+/* ===== Passageiros do mesmo negócio (sub-linhas) ===== */
+.tbl.clients tr.subrow td { border-top-color: transparent; }
+.tbl.clients tr.subrow td.freeze { padding-left: 28px; }

@@ -170,6 +170,8 @@ export type ExpeditionReview = {
   expedition_id: string;
   person_key: string;
   person_name: string;
+  // conferido = negócio não sinalizado conferido; acompanhante = tirado da lista (não é da expedição)
+  kind?: "conferido" | "acompanhante";
   reviewed_by_name: string;
   reviewed_at: string;
 };

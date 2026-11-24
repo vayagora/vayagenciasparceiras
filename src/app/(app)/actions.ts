@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AIRPORTS } from "@/lib/airports";
 import { loadWorld, requireVay } from "@/lib/data";
-import { brl, dayNum, lower, plural, todayIso } from "@/lib/format";
+import { brl, dayNum, lower, plural } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { syncHubspot } from "@/lib/sync";
 
@@ -63,49 +63,70 @@ export async function createExpedition(_: FormState, f: FormData): Promise<FormS
   redirect(`/expedicoes/${data.id}`);
 }
 
-// ---------------------------------------------------------------- Fechamento da expedição
+// ---------------------------------------------------------------- Conclusão da expedição (SPEC 2.4)
 
-// A Vay confirma que a expedição aconteceu: o ganho (negócios ganhos da lista, calculado agora) fica registrado
-// como valor apurado, congelado (período fechado). O crédito em si é lançado pela equipe no HubSpot
-// (objeto Créditos da empresa) e aparece no extrato na sincronização (SPEC 2.3).
-export async function finishExpedition(expId: string): Promise<FormState> {
+// A Vay conclui a expedição: o ganho (negócios ganhos da lista, calculado agora) fica registrado como valor apurado,
+// congelado. O crédito em si é lançado pela equipe no HubSpot (objeto Créditos da empresa) e aparece no extrato na
+// sincronização (SPEC 2.3). Com negócios de vários passageiros, a Vay precisa confirmar que conferiu os acompanhantes.
+export async function finishExpedition(expId: string, multiChecked = false): Promise<FormState> {
   const s = await requireVay();
   const supabase = await createClient();
   const { exps, ledger } = await loadWorld();
   const exp = exps.find((e) => e.id === expId);
   if (!exp) return { error: "Expedição não encontrada." };
-  if (exp.finished_at) return { error: "Esta expedição já foi finalizada." };
-  if (dayNum(exp.start_date) + Number(exp.days) - 1 >= dayNum(todayIso()))
-    return { error: "Só é possível finalizar depois da data de fim da expedição." };
+  if (exp.finished_at) return { error: "Esta expedição já foi concluída." };
+  const multi = ledger.multiDeals(exp.id).length;
+  if (multi > 0 && !multiChecked)
+    return { error: `Confira antes os ${plural(multi, "negócio", "negócios")} com vários passageiros para ver se há acompanhante.` };
 
   const deals = ledger.dealsForExp(exp.id);
   const total = Math.round(ledger.earnings(exp.id).total * 100) / 100;
   const who = s.profile.full_name || s.profile.email;
-  const now = new Date().toISOString();
 
   const { data: marked, error: mErr } = await supabase
     .from("expeditions")
-    .update({ finished_at: now, finished_by: s.profile.id, finished_by_name: who, finished_amount: total })
+    .update({ finished_at: new Date().toISOString(), finished_by: s.profile.id, finished_by_name: who, finished_amount: total })
     .eq("id", exp.id)
     .is("finished_at", null)
     .select("id");
-  if (mErr) return { error: "Não foi possível finalizar a expedição." };
-  if (!marked?.length) return { error: "Esta expedição já foi finalizada." };
+  if (mErr) return { error: "Não foi possível concluir a expedição." };
+  if (!marked?.length) return { error: "Esta expedição já foi concluída." };
   revalidatePath("/", "layout");
   return {
     ok:
       total > 0
-        ? `Expedição finalizada: ${brl(total)} apurados (${plural(deals.length, "negócio", "negócios")}). Lance esse crédito no HubSpot, no objeto Créditos da empresa.`
-        : "Expedição finalizada (sem créditos a lançar).",
+        ? `Expedição concluída: ${brl(total)} apurados (${plural(deals.length, "negócio", "negócios")}). Lance esse crédito no HubSpot, no objeto Créditos da empresa.`
+        : "Expedição concluída (sem créditos a lançar).",
   };
 }
 
-// ---------------------------------------------------------------- Conferência (SPEC 2.1)
+// Reabre a expedição: descarta o valor apurado. Se o crédito já foi lançado no HubSpot, a equipe ajusta lá.
+export async function reopenExpedition(expId: string): Promise<FormState> {
+  await requireVay();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("expeditions")
+    .update({ finished_at: null, finished_by: null, finished_by_name: "", finished_amount: null })
+    .eq("id", expId);
+  if (error) return { error: "Não foi possível reabrir a expedição." };
+  revalidatePath("/", "layout");
+  return { ok: "Expedição reaberta." };
+}
 
-// A Vay só alterna entre "A conferir" e "Conferido". "Passageiros" é preenchido apenas pela sincronização.
-export async function setPersonReviewed(expId: string, personKey: string, personName: string, reviewed: boolean): Promise<FormState> {
+// ---------------------------------------------------------------- Conferência (SPEC 2.4)
+
+// A Vay marca um passageiro como conferido (negócio não sinalizado) ou acompanhante (tirado da lista), ou desfaz.
+// "Passageiros" é preenchido apenas pela sincronização; desfazer devolve a pessoa para onde as regras a põem.
+export async function setPersonReviewed(
+  expId: string,
+  personKey: string,
+  personName: string,
+  reviewed: boolean,
+  kind: "conferido" | "acompanhante" = "conferido",
+): Promise<FormState> {
   const s = await requireVay();
   if (!/^(c|n|d):.+/.test(personKey)) return { error: "Passageiro inválido." };
+  if (kind !== "conferido" && kind !== "acompanhante") return { error: "Marcação inválida." };
   const supabase = await createClient();
   const { error } = reviewed
     ? await supabase.from("expedition_reviews").upsert(
@@ -113,6 +134,7 @@ export async function setPersonReviewed(expId: string, personKey: string, person
           expedition_id: expId,
           person_key: personKey,
           person_name: personName.slice(0, 200),
+          kind,
           reviewed_by: s.profile.id,
           reviewed_by_name: s.profile.full_name || s.profile.email,
           reviewed_at: new Date().toISOString(),
@@ -120,9 +142,9 @@ export async function setPersonReviewed(expId: string, personKey: string, person
         { onConflict: "expedition_id,person_key" },
       )
     : await supabase.from("expedition_reviews").delete().eq("expedition_id", expId).eq("person_key", personKey);
-  if (error) return { error: "Não foi possível salvar a conferência." };
+  if (error) return { error: "Não foi possível salvar." };
   revalidatePath("/", "layout");
-  return { ok: reviewed ? "Marcado como conferido." : "Voltou para a conferir." };
+  return { ok: reviewed ? (kind === "acompanhante" ? "Marcado como acompanhante." : "Marcado como conferido.") : "Marcação desfeita." };
 }
 
 // Sincronização sob demanda (a agendada usa /api/cron/sync).

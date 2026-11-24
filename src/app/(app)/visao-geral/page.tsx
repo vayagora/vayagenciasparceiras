@@ -71,8 +71,8 @@ export default async function OverviewPage() {
       {toFinish.length > 0 ? (
         <section className="card pad stack" style={{ borderColor: "var(--purple-300)", background: "var(--purple-50)" }}>
           <div className="ttl">
-            <h2 className="section-title">{plural(toFinish.length, "expedição para finalizar", "expedições para finalizar")}</h2>
-            <Tip>Expedições que já terminaram. Ao finalizar, a Vay confirma que a expedição aconteceu e os créditos são lançados no extrato do parceiro.</Tip>
+            <h2 className="section-title">{plural(toFinish.length, "expedição para concluir", "expedições para concluir")}</h2>
+            <Tip>Expedições que já terminaram. Ao concluir, a Vay confirma que a expedição aconteceu e registra o valor apurado; a equipe lança os créditos no HubSpot.</Tip>
           </div>
           <div className="row">
             {toFinish.map((e) => (
