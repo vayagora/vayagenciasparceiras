@@ -152,6 +152,12 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
         ) : null}
       </div>
 
+      {isVay && isDone(exp) && !exp.finished_at ? (
+        <div className="notice" role="status">
+          A data de fim desta expedição já passou ({fmtDate(expEnd(exp))}). Ela precisa ser concluída: use “Concluir expedição”.
+        </div>
+      ) : null}
+
       <div className="grid-kpi">
         <Kpi
           label="Clientes"

@@ -17,8 +17,9 @@ Versão 2.5 · baseada no protótipo aprovado (canvas "Vay Agora — Expediçõe
 5. **Qualquer pendência** do passageiro na expedição (negócio conjunto não conferido, composição que mudou, negócio não sinalizado não conferido) deixa ele **inteiro** em A conferir, e quem está no mesmo negócio vai junto (o grupo nunca se divide).
 6. **Ordem**: alfabética, com quem está no mesmo negócio junto (sub-linha). Para a Vay, cada linha mostra onde estão os outros passageiros do mesmo negócio (rastreio entre abas).
 7. **Pendências de lançamento** (parceiro): só os nomes dos passageiros pendentes de negócios da própria agência. O sistema grava essas pendências (`expedition_pending`) a cada sincronização e a cada marcação da Vay, porque o parceiro não enxerga os negócios não sinalizados.
-8. **Concluir expedição** (Vay, a qualquer momento; avisa se a data de fim não passou): **bloqueada** enquanto houver negócio da agência em A conferir (ficaria fora da apuração). Registra o valor apurado; o parceiro vê **Concluída**. **Reabrir** (Vay) descarta o valor apurado, com aviso.
-9. Só remunera o negócio da agência que está na lista (ganho, vinculado e sem pendência).
+8. **Expedição que já passou da data de fim e não foi concluída**: a Vay vê o aviso na Visão geral ("N expedições já terminaram e precisam ser concluídas"), o selo "Precisa ser concluída" no topo da lista de expedições e um aviso na tela da expedição; o parceiro vê "Aguardando conclusão". Só as concluídas vão para a seção recolhida "Expedições concluídas".
+9. **Concluir expedição** (Vay, a qualquer momento; avisa se a data de fim não passou): **bloqueada** enquanto houver negócio da agência em A conferir (ficaria fora da apuração). Registra o valor apurado; o parceiro vê **Concluída**. **Reabrir** (Vay) descarta o valor apurado, com aviso.
+10. Só remunera o negócio da agência que está na lista (ganho, vinculado e sem pendência).
 
 **Mudanças na 2.3 — créditos vindos do HubSpot (como no sistema de comissários):**
 

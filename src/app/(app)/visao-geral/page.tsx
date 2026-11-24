@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Badge, Kpi, Tip } from "@/components/ui";
-import { addMoney, isDone, ZERO } from "@/lib/commission";
+import { addMoney, expEnd, isDone, ZERO } from "@/lib/commission";
 import { loadWorld, requireVay } from "@/lib/data";
-import { brl, fmtDateTime, plural } from "@/lib/format";
+import { brl, fmtDate, fmtDateTime, plural } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { ExpeditionList } from "@/components/ExpeditionList";
 import { SyncButton } from "./SyncButton";
@@ -69,15 +69,17 @@ export default async function OverviewPage() {
       </div>
 
       {toFinish.length > 0 ? (
-        <section className="card pad stack" style={{ borderColor: "var(--purple-300)", background: "var(--purple-50)" }}>
+        <section className="card pad stack" role="status" style={{ borderColor: "var(--yellow-300)", background: "var(--yellow-50)" }}>
           <div className="ttl">
-            <h2 className="section-title">{plural(toFinish.length, "expedição para concluir", "expedições para concluir")}</h2>
-            <Tip>Expedições que já terminaram. Ao concluir, a Vay confirma que a expedição aconteceu e registra o valor apurado; a equipe lança os créditos no HubSpot.</Tip>
+            <h2 className="section-title">
+              {toFinish.length === 1 ? "1 expedição já terminou e precisa ser concluída" : `${toFinish.length} expedições já terminaram e precisam ser concluídas`}
+            </h2>
+            <Tip>A data de fim já passou. Abra a expedição e use “Concluir expedição”: a Vay confirma que ela aconteceu e registra o valor apurado; depois, a equipe lança os créditos no HubSpot.</Tip>
           </div>
           <div className="row">
             {toFinish.map((e) => (
               <Link key={e.id} href={`/expedicoes/${e.id}`} className="btn outline sm">
-                {e.name} · {partnerById.get(e.partner_id)?.name} · {brl(ledger.earnings(e.id).total)}
+                {e.name} · {partnerById.get(e.partner_id)?.name} · terminou em {fmtDate(expEnd(e))} · {brl(ledger.earnings(e.id).total)}
               </Link>
             ))}
           </div>

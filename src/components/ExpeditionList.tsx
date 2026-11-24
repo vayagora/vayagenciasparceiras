@@ -21,10 +21,13 @@ export function ExpeditionList({
   emptyText: string;
 }) {
   const today = dayNum(todayIso());
+  // Já terminou (pela data) mas a Vay ainda não concluiu: fica no topo, com aviso
+  const toConclude = exps.filter((e) => isDone(e) && !e.finished_at).sort((a, b) => (expEnd(a) < expEnd(b) ? -1 : 1));
   const active = exps
-    .filter((e) => !isDone(e))
+    .filter((e) => !isDone(e) && !e.finished_at)
     .sort((a, b) => Math.abs(dayNum(a.start_date) - today) - Math.abs(dayNum(b.start_date) - today) || (a.start_date < b.start_date ? -1 : 1));
-  const done = exps.filter(isDone).sort((a, b) => (expEnd(a) < expEnd(b) ? 1 : -1));
+  // Concluídas pela Vay, numa seção recolhível
+  const done = exps.filter((e) => e.finished_at).sort((a, b) => (expEnd(a) < expEnd(b) ? 1 : -1));
   // Expedição concluída: vale o valor apurado na conclusão; senão, o ganho atual (a liberar)
   const earned = (e: Expedition) =>
     e.finished_at ? Number(e.finished_amount ?? 0) : world.ledger.earnings(e.id).total;
@@ -37,7 +40,12 @@ export function ExpeditionList({
     return (
       <Link href={`/expedicoes/${e.id}`} className={`card erow${finished ? " done" : ""}`} aria-label={`Abrir a expedição ${e.name}`}>
         <span className="stack" style={{ gap: 2, flex: "1 1 300px", minWidth: 0 }}>
-          <span className="strong" style={{ fontSize: 16 }}>{e.name}</span>
+          <span className="row" style={{ gap: 8 }}>
+            <span className="strong" style={{ fontSize: 16 }}>{e.name}</span>
+            {isDone(e) && !e.finished_at ? (
+              <span className={`badge ${isVay ? "yellow" : "neutral"}`}>{isVay ? "Precisa ser concluída" : "Aguardando conclusão"}</span>
+            ) : null}
+          </span>
           <span className="meta">
             <span>{cityLabel(e.city)}</span>
             <span>{dm(e.start_date)} a {dm(expEnd(e))}</span>
@@ -70,8 +78,9 @@ export function ExpeditionList({
   if (!exps.length) return <div className="card empty">{emptyText}</div>;
   return (
     <div className="stack" style={{ gap: 8 }}>
+      {toConclude.map((e) => <Row key={e.id} e={e} />)}
       {active.map((e) => <Row key={e.id} e={e} />)}
-      {!active.length ? <div className="card empty">Nenhuma expedição em andamento ou programada.</div> : null}
+      {!active.length && !toConclude.length ? <div className="card empty">Nenhuma expedição em andamento ou programada.</div> : null}
       {done.length ? (
         <details className="done-sec">
           <summary className="done-toggle">
