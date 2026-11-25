@@ -71,13 +71,44 @@ describe("vínculo negócio → expedição (sempre automático)", () => {
     expect(r.reason).toContain("4 dias antes");
   });
 
-  it("Paris fora da janela: não vincula, não remunera e pede correção no HubSpot", () => {
+  it("Paris fora da janela (sinalizado): vai para A conferir na expedição de data mais próxima e não remunera até a Vay decidir", () => {
     const d = deal({ legs: [{ city: "Paris", date: "2026-08-01" }], end_date: "2026-08-10" });
     const [r] = resolveDeals([d], [partner], [madrid]);
-    expect(r.exp).toBeNull();
-    expect(r.com.total).toBe(0);
-    expect(flagKeys(r)).toEqual(["nenhuma"]);
+    expect(r.exp?.id).toBe("eMad");
+    expect(flagKeys(r)).toEqual(["revisar"]);
     expect(r.needsReview).toBe(true);
+    const l = new Ledger([d], [partner], [madrid]);
+    expect(l.lines(madrid)).toEqual([]);
+    expect(l.paid).toEqual([]);
+    expect(l.reviewQueue(madrid).pending.map((p) => p.reasons)).toEqual([["revisar"]]);
+    // sem nenhuma expedição do parceiro: fica "sem expedição"
+    expect(flagKeys(resolveDeals([d], [partner], [])[0])).toEqual(["nenhuma"]);
+  });
+
+  it("destino/datas não batem: “Marcar como passageiros” leva para a lista; “conferido” tira da conferência sem remunerar", () => {
+    const d = deal({ legs: [{ city: "Paris", date: "2026-08-01" }], end_date: "2026-08-10" });
+    const ok = new Ledger([d], [partner], [madrid], { approvals: [{ id: "a", expedition_id: "eMad", deal_id: d.id, passenger_keys: ["c:hs-Ana"], approved_by_name: "", approved_at: "" }] });
+    expect(ok.lines(madrid).map((x) => x.name)).toEqual(["Ana"]);
+    expect(ok.earnings("eMad").total).toBeCloseTo(450);
+    const no = new Ledger([d], [partner], [madrid], { reviews: [{ id: "r", expedition_id: "eMad", person_key: "c:hs-Ana", person_name: "Ana", reviewed_by_name: "", reviewed_at: "" }] });
+    expect(no.lines(madrid)).toEqual([]);
+    expect(no.paid).toEqual([]);
+    expect(no.pendingAgencyDeals("eMad")).toEqual([]);
+    expect(no.reviewQueue(madrid).done.map((p) => [p.name, p.reasons])).toEqual([["Ana", ["revisar"]]]);
+  });
+
+  it("caso Lorena: só a volta FEN → Palmas; sinalizado, o aeroporto de saída conta e entra em Noronha", () => {
+    const noronha: Expedition = { ...madrid, id: "eFen", city: "Fernando de Noronha", arrival_airport: "FEN", start_date: "2026-12-02", days: 8 };
+    const legs = [
+      { city: "Palmas", date: "2026-12-08", lat: -10.29, lng: -48.36 },
+      { city: "Fernando de Noronha", date: "2026-12-08", lat: -3.85, lng: -32.42, origin: true },
+    ];
+    const [r] = resolveDeals([deal({ legs, end_date: "2026-12-08", voo: 1980, hotel: 0, seguro: 0 })], [partner], [noronha]);
+    expect(r.exp?.id).toBe("eFen");
+    expect(flagKeys(r)).toEqual(["aprox"]); // a viagem "começa" no fim da expedição: aproximação, só informativa
+    // não sinalizado: a saída não conta (só a chegada)
+    const ns = deal({ signaled: false, afiliado: "", hs_origem: "", hs_agency: "", legs, end_date: "2026-12-08" });
+    expect(resolveDeals([ns], [partner], [noronha])[0].suggested).toBeNull();
   });
 
   it("duas expedições compatíveis: fica na de maior pontuação; aviso só informativo", () => {
@@ -370,7 +401,8 @@ describe("expedição com destino livre e aeroporto de chegada", () => {
 
   it("sem aeroporto e com destino fora da lista de cidades: não há como vincular", () => {
     const d = deal({ legs: [{ city: "Bangkok", date: "2026-11-30", lat: 13.68, lng: 100.75 }], end_date: "2026-12-16" });
-    expect(resolveDeals([d], [partner], [{ ...tailandia, arrival_airport: null }])[0].exp).toBeNull();
+    const [r] = resolveDeals([d], [partner], [{ ...tailandia, arrival_airport: null }]);
+    expect(flagKeys(r)).toEqual(["revisar"]); // sinalizado: vai para A conferir na de data mais próxima
   });
 });
 
@@ -486,8 +518,7 @@ describe("hospedagem e seguro (SPEC 2.5)", () => {
   it("caso 2: datas de outra viagem não prendem o seguro à passagem; sem expedição compatível, pendência", () => {
     const luci = pax("Luciana", { is_titular: true });
     const [, r] = resolveDeals([aereo(luci), seguro(luci, { legs: [{ city: "Ásia", date: "2027-03-01" }], end_date: "2027-03-10" })], [partner], [tailandia]);
-    expect(r.exp).toBeNull();
-    expect(r.flags.map((f) => f.key)).toEqual(["nenhuma"]);
+    expect(r.flags.map((f) => f.key)).toEqual(["revisar"]); // não segue a passagem; vai para A conferir
   });
 
   it("caso 3: não sinalizado só entra em A conferir se destino e data baterem", () => {

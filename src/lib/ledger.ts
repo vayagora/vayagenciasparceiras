@@ -50,7 +50,10 @@ export type ClientLine = {
   group: string;
 };
 
-export type PendingReason = "conjunto" | "composicao" | "nao_sinalizado" | "outro";
+export type PendingReason = "conjunto" | "composicao" | "nao_sinalizado" | "revisar" | "outro";
+
+// Negócio da agência cujo destino/datas não batem: foi para a expedição de data mais próxima, para conferência
+export const isMismatch = (r: Pick<Resolved, "flags">) => r.flags.some((f) => f.key === "revisar");
 
 // Pessoa na conferência (A conferir / Conferidos)
 export type ReviewPerson = {
@@ -81,6 +84,8 @@ type ExpState = {
   pending: Map<string, Set<PendingReason>>;
   // Negócios da agência pendentes (não vão para a lista)
   pendingDeals: Set<string>;
+  // Negócios da agência que a Vay conferiu como "não é desta expedição" (fora da lista, sem pendência)
+  dismissedDeals: Set<string>;
 };
 
 export class Ledger {
@@ -104,7 +109,11 @@ export class Ledger {
     this.reviews = opts.reviews ?? [];
     this.approvals = opts.approvals ?? [];
     this.stored = opts.storedPending ?? null;
-    this.paid = this.resolved.filter((r) => r.exp && r.deal.stage_kind === "won" && isAgencyDeal(r.deal) && !this.state(r.exp.id).pendingDeals.has(r.deal.id));
+    this.paid = this.resolved.filter((r) => {
+      if (!r.exp || r.deal.stage_kind !== "won" || !isAgencyDeal(r.deal)) return false;
+      const st = this.state(r.exp.id);
+      return !st.pendingDeals.has(r.deal.id) && !st.dismissedDeals.has(r.deal.id);
+    });
   }
 
   // Negócios da agência vinculados à expedição (qualquer etapa)
@@ -132,20 +141,27 @@ export class Ledger {
     const pending = new Map<string, Set<PendingReason>>();
     const add = (k: string, why: PendingReason) => pending.set(k, (pending.get(k) ?? new Set()).add(why));
     const pendingDeals = new Set<string>();
+    const dismissedDeals = new Set<string>();
     const agency = this.agencyDeals(expId);
+    const conf = this.conferred(expId);
+    // Destino/datas não batem: conferido como "não é desta expedição" (todos os passageiros marcados) sai da lista
+    for (const r of agency)
+      if (isMismatch(r) && !this.approvalOf(expId, r.deal.id) && travellers(r.deal).every((p) => conf.has(personKey(p))))
+        dismissedDeals.add(r.deal.id);
+    const live = agency.filter((r) => !dismissedDeals.has(r.deal.id));
 
     if (this.stored) {
       // Parceiro: usa o que o sistema calculou (as pendências vindas de negócios não sinalizados ele não enxerga)
       for (const x of this.stored.filter((p) => p.expedition_id === expId)) add(x.person_key, "outro");
     } else {
-      const conf = this.conferred(expId);
       for (const r of this.unsignaled(expId))
         for (const p of travellers(r.deal)) if (!conf.has(personKey(p))) add(personKey(p), "nao_sinalizado");
-      for (const r of agency) {
-        if (!isJointDeal(r.deal)) continue;
+      for (const r of live) {
+        const mismatch = isMismatch(r);
+        if (!isJointDeal(r.deal) && !mismatch) continue;
         const keys = travellers(r.deal).map(personKey);
         const a = this.approvalOf(expId, r.deal.id);
-        const why: PendingReason | null = !a ? "conjunto" : !sameSet(a.passenger_keys, keys) ? "composicao" : null;
+        const why: PendingReason | null = !a ? (mismatch ? "revisar" : "conjunto") : !sameSet(a.passenger_keys, keys) ? "composicao" : null;
         if (why) {
           pendingDeals.add(r.deal.id);
           for (const k of keys) add(k, why);
@@ -155,7 +171,7 @@ export class Ledger {
     // Propagação até estabilizar
     for (let changed = true; changed; ) {
       changed = false;
-      for (const r of agency) {
+      for (const r of live) {
         if (pendingDeals.has(r.deal.id)) continue;
         const keys = travellers(r.deal).map(personKey);
         if (keys.some((k) => pending.has(k))) {
@@ -165,7 +181,7 @@ export class Ledger {
         }
       }
     }
-    const st = { pending, pendingDeals };
+    const st = { pending, pendingDeals, dismissedDeals };
     this.states.set(expId, st);
     return st;
   }
@@ -178,7 +194,7 @@ export class Ledger {
   // Negócios da lista (fora de pendência), em qualquer etapa
   allForExp(expId: string): Resolved[] {
     const st = this.state(expId);
-    return this.agencyDeals(expId).filter((r) => !st.pendingDeals.has(r.deal.id));
+    return this.agencyDeals(expId).filter((r) => !st.pendingDeals.has(r.deal.id) && !st.dismissedDeals.has(r.deal.id));
   }
 
   // Negócios da agência ainda em "A conferir" (bloqueiam a conclusão da expedição)
@@ -226,6 +242,8 @@ export class Ledger {
     };
     for (const r of this.pendingAgencyDeals(e.id))
       for (const p of travellers(r.deal)) touch({ key: personKey(p), name: p.name, email: p.email }, r);
+    for (const r of this.agencyDeals(e.id).filter((x) => st.dismissedDeals.has(x.deal.id)))
+      for (const p of travellers(r.deal)) touch({ key: personKey(p), name: p.name, email: p.email }, r);
     for (const r of this.unsignaled(e.id)) {
       const ps = travellers(r.deal);
       if (!ps.length) touch({ key: `d:${r.deal.id}`, name: "Negócio sem passageiros", email: "" }, r);
@@ -238,6 +256,7 @@ export class Ledger {
     for (const p of all) {
       p.reasons = [...(st.pending.get(p.key) ?? [])];
       if (p.key.startsWith("d:")) p.reasons = ["nao_sinalizado"];
+      if (!p.reasons.length) p.reasons = p.deals.some((r) => st.dismissedDeals.has(r.deal.id)) ? ["revisar"] : ["nao_sinalizado"];
       p.review = conf.get(p.key) ?? null;
       p.mates = this.matesOf(p.key, p.deals, e.id);
       p.group = this.groupOf(p.key, p.deals);

@@ -53,8 +53,16 @@ export function expPlace(exp: Pick<Expedition, "city" | "arrival_airport">): { l
 }
 
 // Afiliado já filtrado antes; aqui avalia data + destino com as tolerâncias.
-export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedition, "city" | "arrival_airport" | "start_date" | "days">, tol: Tolerances = DEFAULT_TOL): Match | null {
-  if (!deal.legs?.length) return null;
+export function evalDeal(
+  deal: Pick<Deal, "legs" | "end_date">,
+  exp: Pick<Expedition, "city" | "arrival_airport" | "start_date" | "days">,
+  tol: Tolerances = DEFAULT_TOL,
+  opts: { origins?: boolean } = {},
+): Match | null {
+  // Aeroportos de saída só contam quando pedido (negócio sinalizado)
+  const legs = (deal.legs ?? []).filter((l) => opts.origins || !l.origin);
+  if (!legs.length) return null;
+  deal = { ...deal, legs };
   const es = dayNum(exp.start_date);
   const ee = es + Number(exp.days) - 1;
   const ts = dayNum(deal.legs[0].date);
@@ -95,11 +103,11 @@ export function evalDeal(deal: Pick<Deal, "legs" | "end_date">, exp: Pick<Expedi
 
 // ---------------------------------------------------------------- Resolução
 
-export type FlagKey = "aprox" | "multi" | "nenhuma" | "nao_sinalizado" | "credito" | "misto" | "ajustado";
+export type FlagKey = "aprox" | "multi" | "nenhuma" | "revisar" | "nao_sinalizado" | "credito" | "misto" | "ajustado";
 export type Flag = { key: FlagKey; label: string; tone: Tone };
 
 // Só estes pedem correção no HubSpot (pendência da Vay). Os demais apenas informam.
-export const PENDING: FlagKey[] = ["nenhuma", "nao_sinalizado"];
+export const PENDING: FlagKey[] = ["nenhuma", "revisar", "nao_sinalizado"];
 
 export type Resolved = {
   deal: Deal;
@@ -174,11 +182,19 @@ export function calculatedCashback(d: Deal): number {
   return cashback({ ...d, cashback_override: null }).com.total;
 }
 
+// Expedição de data mais próxima (início da viagem × início da expedição), sem olhar o destino
+export function nearestByDate(d: Pick<Deal, "legs">, exps: Expedition[]): Expedition | null {
+  const legs = d.legs ?? [];
+  if (!legs.length || !exps.length) return null;
+  const ts = dayNum(legs[0].date);
+  return [...exps].sort((a, b) => Math.abs(dayNum(a.start_date) - ts) - Math.abs(dayNum(b.start_date) - ts))[0];
+}
+
 // Expedição de maior pontuação para o negócio entre as dadas (as do parceiro); null se nenhuma combina.
 export function matchExpedition(d: Pick<Deal, "legs" | "end_date">, exps: Expedition[], tol: Tolerances = DEFAULT_TOL): Expedition | null {
   let best: { e: Expedition; score: number } | null = null;
   for (const e of exps) {
-    const m = evalDeal(d, e, tol);
+    const m = evalDeal(d, e, tol, { origins: true });
     if (m && (!best || m.score > best.score)) best = { e, score: m.score };
   }
   return best?.e ?? null;
@@ -188,9 +204,9 @@ export function matchExpedition(d: Pick<Deal, "legs" | "end_date">, exps: Expedi
 // Mais de uma expedição possível → a de maior pontuação (destino e datas mais próximos), com aviso só informativo.
 export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expedition[], tol: Tolerances = DEFAULT_TOL): Resolved[] {
   const byAfiliado = new Map(partners.map((p) => [p.afiliado, p]));
-  const ranked = (pool: Expedition[], d: Deal) =>
+  const ranked = (pool: Expedition[], d: Deal, origins = false) =>
     pool
-      .map((e) => ({ e, m: evalDeal(d, e, tol) }))
+      .map((e) => ({ e, m: evalDeal(d, e, tol, { origins }) }))
       .filter((x): x is { e: Expedition; m: Match } => !!x.m)
       .sort((a, b) => b.m.score - a.m.score);
 
@@ -227,7 +243,7 @@ export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expeditio
       return r;
     }
 
-    const cands = p ? ranked(exps.filter((e) => e.partner_id === p.id), d) : [];
+    const cands = p ? ranked(exps.filter((e) => e.partner_id === p.id), d, true) : [];
     if (cands.length) {
       r.exp = cands[0].e;
       r.reason = cands[0].m.reason;
@@ -241,10 +257,24 @@ export function resolveDeals(deals: Deal[], partners: Partner[], exps: Expeditio
         r.flags.push(...c.flags);
       }
     } else if (d.stage_kind !== "lost") {
-      r.reason = p
-        ? `Nenhuma expedição de ${p.name} combina com as datas e o destino desta viagem.`
-        : "A empresa associada não corresponde a nenhum parceiro cadastrado.";
-      r.flags.push({ key: "nenhuma", label: "Nenhuma expedição encontrada", tone: "red" });
+      // Sinalizado, mas destino/datas não batem: vai para "A conferir" da expedição do parceiro de data mais próxima
+      // (SPEC 2.6). Sem nenhuma expedição do parceiro, fica como "sem expedição" (Visão geral).
+      const near = p ? nearestByDate(d, exps.filter((e) => e.partner_id === p.id)) : null;
+      if (near) {
+        r.exp = near;
+        r.reason = `Destino e datas desta viagem não batem com nenhuma expedição de ${p!.name}; ficou na de data mais próxima para conferência.`;
+        r.flags.push({ key: "revisar", label: "Destino/datas não batem", tone: "yellow" });
+        if (d.stage_kind === "won") {
+          const c = cashback(d);
+          r.com = c.com;
+          r.flags.push(...c.flags);
+        }
+      } else {
+        r.reason = p
+          ? `Nenhuma expedição de ${p.name} combina com as datas e o destino desta viagem.`
+          : "A empresa associada não corresponde a nenhum parceiro cadastrado.";
+        r.flags.push({ key: "nenhuma", label: "Nenhuma expedição encontrada", tone: "red" });
+      }
     }
     r.needsReview = r.flags.some((f) => PENDING.includes(f.key));
     return r;
@@ -297,7 +327,7 @@ function linkStaysAndInsurance(rs: Resolved[], exps: Expedition[], tol: Toleranc
       .filter((x): x is typeof x & { fit: number } => x.fit !== null)
       .sort((a, b) => a.fit - b.fit)[0];
     if (viaAir) return relink(r, viaAir.exp, `Acompanha a passagem de ${viaAir.name} (${dealNo(viaAir.r.deal)}) nesta expedição.`, false);
-    if (!r.exp && unknownPlace(d)) {
+    if ((!r.exp || r.flags.some((f) => f.key === "revisar")) && unknownPlace(d)) {
       const byDate = exps
         .filter((e) => e.partner_id === r.partner!.id)
         .map((e) => ({ e, fit: dateFit(d, e, tol) }))

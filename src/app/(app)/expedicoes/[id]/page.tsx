@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge, Kpi, Tip } from "@/components/ui";
 import { dealStage, expEnd, expStatus, isDone, PRODUCTS, STAGES, stageOf, type Product } from "@/lib/commission";
 import { dealNo, RULE_TIP, type Resolved } from "@/lib/matching";
-import { isJointDeal, type Mate, type PendingReason, type ReviewPerson } from "@/lib/ledger";
+import { isJointDeal, isMismatch, type Mate, type PendingReason, type ReviewPerson } from "@/lib/ledger";
 import { cityLabel } from "@/lib/cities";
 import { loadWorld, requireSession } from "@/lib/data";
 import { brl, dm, fmtDate, plural } from "@/lib/format";
@@ -72,6 +72,7 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
     conjunto: { label: "Negócio conjunto (vários passageiros)", tone: "yellow" },
     composicao: { label: "Mudou a composição do negócio", tone: "yellow" },
     nao_sinalizado: { label: "Não sinalizado no HubSpot", tone: "red" },
+    revisar: { label: "Destino/datas não batem", tone: "yellow" },
     outro: { label: "Pendência em outro negócio do grupo", tone: "neutral" },
   };
   const reviewRow = (p: ReviewPerson, i: number, all: ReviewPerson[]): ReviewRow => ({
@@ -79,13 +80,13 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
     name: p.name,
     email: p.email,
     reasons: p.reasons.map((x) => REASON[x]),
-    canConfer: p.deals.some((r) => r.deal.signaled === false),
+    canConfer: p.deals.some((r) => r.deal.signaled === false || isMismatch(r)),
     group: p.group,
     sub: i > 0 && all[i - 1].group === p.group,
     matesTxt: matesTxt(p.mates) ?? "",
     deals: p.deals.map((r) => ({
       id: r.deal.id,
-      canApprove: r.deal.signaled !== false && isJointDeal(r.deal),
+      canApprove: r.deal.signaled !== false && (isJointDeal(r.deal) || isMismatch(r)),
       no: dealNo(r.deal),
       url: hsUrl(r.deal.hubspot_id),
       stage: stageOf(dealStage(r.deal)).label,
@@ -95,7 +96,9 @@ export default async function ExpeditionPage({ params, searchParams }: { params:
           ? r.fixes.length
             ? `${dealNo(r.deal)}: ${r.fixes.join("; ")}.`
             : `${dealNo(r.deal)}: confira a origem e a empresa associada.`
-          : isJointDeal(r.deal)
+          : isMismatch(r)
+            ? `${dealNo(r.deal)}: destino e datas não batem com nenhuma expedição. Se for desta, “Marcar como passageiros”; se não, corrija o roteiro no HubSpot ou marque como conferido.`
+            : isJointDeal(r.deal)
             ? ledger.approvalOf(exp.id, r.deal.id)
               ? `${dealNo(r.deal)}: entrou ou saiu alguém do negócio desde a conferência. Confira e marque de novo.`
               : `${dealNo(r.deal)}: se todos viajam, “Marcar como passageiros”. Se alguém não viaja, separe os negócios no HubSpot.`

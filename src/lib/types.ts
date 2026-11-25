@@ -49,7 +49,8 @@ export type StageId = "em_contato" | "negociacao" | "fechado" | "perdido";
 export type StageKind = "won" | "open" | "lost";
 
 // Trecho do roteiro. lat/lng vêm do aeroporto (HubSpot); sem eles, usa a lista de cidades.
-export type Leg = { city: string; date: string; lat?: number; lng?: number };
+// origin = aeroporto de SAÍDA do trecho (a pessoa estava ali nessa data). Só conta no vínculo de negócio sinalizado (SPEC 2.6).
+export type Leg = { city: string; date: string; lat?: number; lng?: number; origin?: boolean };
 
 // Passageiro do negócio (espelho das associações negócio → contato no HubSpot).
 // O parceiro recebe os passageiros dos negócios da própria agência (RLS).

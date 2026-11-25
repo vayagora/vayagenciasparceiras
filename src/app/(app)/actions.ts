@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AIRPORTS } from "@/lib/airports";
 import { loadWorld, requireVay } from "@/lib/data";
-import { personKey } from "@/lib/ledger";
+import { isMismatch, personKey } from "@/lib/ledger";
 import { dealNo } from "@/lib/matching";
 import { brl, dayNum, lower, plural } from "@/lib/format";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -137,7 +137,7 @@ export async function approveJointDeal(expId: string, dealId: string): Promise<F
   const r = ledger.agencyDeals(expId).find((x) => x.deal.id === dealId);
   if (!r) return { error: "Negócio não encontrado nesta expedição (ou não sinalizado no HubSpot)." };
   const keys = r.deal.passengers.filter((p) => p.is_passenger !== false).map((p) => personKey(p));
-  if (keys.length < 2) return { error: "Este negócio não é conjunto." };
+  if (keys.length < 2 && !isMismatch(r)) return { error: "Este negócio não precisa de conferência." };
   const supabase = await createClient();
   const { error } = await supabase.from("expedition_approvals").upsert(
     {

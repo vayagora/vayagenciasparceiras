@@ -252,6 +252,9 @@ export function readTrip(p: Record<string, string | null | undefined>): Trip | {
       const place = airportPlace(String(p[t.dest] ?? ""));
       const date = toIsoDate(p[t.date]);
       if (place && date) legs.push({ ...place, date });
+      // Saída do trecho: quem sai de um lugar numa data esteve lá (ex.: só a volta FEN → Palmas)
+      const from = airportPlace(String(p[t.from] ?? ""));
+      if (from && date) legs.push({ ...from, date, origin: true });
     }
   } else {
     const f = product === "hotel" ? { place: textPlace(p[FIELDS.hotel.city]), start: p[FIELDS.hotel.start], end: p[FIELDS.hotel.end] }

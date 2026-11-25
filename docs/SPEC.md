@@ -1,7 +1,11 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.5 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.6 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.6 — negócio sinalizado sempre cai em alguma expedição do parceiro:**
+1. No negócio **sinalizado** (Origem + empresa), o **aeroporto de saída** de cada trecho também conta como lugar visitado naquela data (ex.: passagem só de volta Fernando de Noronha → Palmas entra em Noronha). No não sinalizado continua valendo só a chegada.
+2. Negócio sinalizado cujo destino/datas não batem com nenhuma expedição do parceiro vai para **"A conferir" da expedição do parceiro de data mais próxima** ("Destino/datas não batem"). A Vay decide: **"Marcar como passageiros"** (entra na lista e remunera; vale para os passageiros daquele momento) ou **"Marcar como conferido"** (não é desta expedição: sai da conferência e não remunera). Enquanto pendente, bloqueia a conclusão. Só fica "sem expedição" (Visão geral) se o parceiro não tiver nenhuma expedição.
 
 **Mudanças na 2.5 — hospedagem e seguro:** o destino desses negócios é texto livre e costuma vir como país ou região ("Ásia", "Europa").
 1. **Negócio da agência (sinalizado) com passagem do mesmo passageiro:** se um passageiro do negócio de hospedagem/seguro tem passagem aérea da agência numa expedição (mesmo contato do HubSpot ou mesmo nome completo) e as datas são compatíveis com ela, o negócio entra nessa expedição. Se a passagem tiver pendência, tudo fica em "A conferir" (regra do grupo).
