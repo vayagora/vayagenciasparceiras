@@ -11,14 +11,13 @@ type Props = {
   world: World;
   isVay: boolean;
   year?: string;
-  quarter?: string;
   basePath: string;
   newExpedition?: boolean; // formulário de nova expedição aberto (?nova=1)
 };
 
 // Painel do parceiro: bloco Ganhos no topo e as expedições logo abaixo.
 // Parceiro: é a aba "Expedições" do portal. Vay: tela do parceiro, com o botão "Acordo de parceria".
-export function PartnerDashboard({ partner, world, isVay, year, quarter, basePath, newExpedition }: Props) {
+export function PartnerDashboard({ partner, world, isVay, year, basePath, newExpedition }: Props) {
   const exps = world.exps.filter((e) => e.partner_id === partner.id);
   return (
     <>
@@ -42,7 +41,7 @@ export function PartnerDashboard({ partner, world, isVay, year, quarter, basePat
         ) : null}
       </div>
 
-      <EarningsBlock partner={partner} world={world} isVay={isVay} year={year} quarter={quarter} basePath={basePath} />
+      <EarningsBlock partner={partner} world={world} isVay={isVay} year={year} basePath={basePath} />
 
       <section className="stack exp-sec" aria-label="Expedições">
         <div className="sec-head">

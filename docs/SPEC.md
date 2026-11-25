@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.6 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.7 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.7:** o bloco "Ganhos" (Vay e parceiro) deixa de ter filtro por trimestre: só **"Todos os anos"** (padrão) ou um ano específico, pela data de fechamento do negócio no HubSpot.
 
 **Mudanças na 2.6 — negócio sinalizado sempre cai em alguma expedição do parceiro:**
 1. No negócio **sinalizado** (Origem + empresa), o **aeroporto de saída** de cada trecho também conta como lugar visitado naquela data (ex.: passagem só de volta Fernando de Noronha → Palmas entra em Noronha). No não sinalizado continua valendo só a chegada.

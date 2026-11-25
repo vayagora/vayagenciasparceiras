@@ -9,7 +9,7 @@ export default async function PartnerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ ano?: string; tri?: string; nova?: string }>;
+  searchParams: Promise<{ ano?: string; nova?: string }>;
 }) {
   await requireVay();
   const [{ id }, sp, world] = await Promise.all([params, searchParams, loadWorld()]);
@@ -21,7 +21,6 @@ export default async function PartnerPage({
       world={world}
       isVay
       year={sp.ano}
-      quarter={sp.tri}
       basePath={`/parceiros/${id}`}
       newExpedition={!!sp.nova}
     />

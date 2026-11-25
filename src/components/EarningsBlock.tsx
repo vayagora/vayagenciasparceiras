@@ -2,7 +2,7 @@ import Link from "next/link";
 import { buildStatement, toRelease } from "@/lib/balance";
 import { addMoney, pct, RATES, ZERO } from "@/lib/commission";
 import type { World } from "@/lib/data";
-import { brl, lastClosedQuarter, plural, QLABEL, quarterOf, todayIso } from "@/lib/format";
+import { brl, plural, quarterOf, todayIso } from "@/lib/format";
 import type { Partner } from "@/lib/types";
 import { PeriodFilter } from "./PeriodFilter";
 import { Tip } from "./ui";
@@ -14,24 +14,18 @@ export function EarningsBlock({
   world,
   isVay,
   year,
-  quarter,
   basePath,
 }: {
   partner: Partner;
   world: World;
   isVay: boolean;
   year?: string;
-  quarter?: string;
   basePath: string;
 }) {
   const { ledger } = world;
-  const lq = lastClosedQuarter();
-  const pYear = Number(year) || lq.y;
-  const pQ = quarter === "all" || ["1", "2", "3", "4"].includes(quarter ?? "") ? quarter! : String(lq.q);
-  const inPeriod = (iso: string) => {
-    const q = quarterOf(iso);
-    return q.y === pYear && (pQ === "all" || String(q.q) === pQ);
-  };
+  // Período: todos os anos (padrão) ou um ano, pela data de fechamento do negócio
+  const pYear = /^\d{4}$/.test(year ?? "") ? Number(year) : null;
+  const inPeriod = (iso: string) => !!iso && (pYear === null || quarterOf(iso).y === pYear);
 
   const exps = world.exps.filter((e) => e.partner_id === partner.id);
   const expIds = new Set(exps.map((e) => e.id));
@@ -43,13 +37,12 @@ export function EarningsBlock({
   const st = buildStatement(partner, world.credits);
   const pendingRelease = toRelease(partner, ledger, world.exps).reduce((a, x) => a + x.total, 0);
 
-  const periodShort = pQ === "all" ? `Ano de ${pYear}` : `${pQ}º tri/${pYear}`;
-  const periodLabel = pQ === "all" ? `Ano de ${pYear} · jan–dez` : `${QLABEL[Number(pQ)]} de ${pYear}`;
-  const isDefault = pYear === lq.y && pQ === String(lq.q);
   const now = quarterOf(todayIso());
-  let periodHint = isDefault ? "Último trimestre concluído (horário de Brasília)" : "Pela data de fechamento do negócio no HubSpot";
-  if (pYear === now.y && (pQ === "all" || Number(pQ) === now.q)) periodHint = "Período em andamento — valores parciais";
-  const years = new Set<number>([now.y, lq.y]);
+  const periodShort = pYear === null ? "Todos os anos" : `Ano de ${pYear}`;
+  const periodLabel = pYear === null ? "Todos os anos" : `Ano de ${pYear} · jan–dez`;
+  const periodHint =
+    pYear === now.y ? "Ano em andamento — valores parciais. Pela data de fechamento do negócio no HubSpot." : "Pela data de fechamento do negócio no HubSpot.";
+  const years = new Set<number>([now.y]);
   world.deals.forEach((d) => d.closed_on && years.add(quarterOf(d.closed_on).y));
 
   const rates = [
@@ -67,7 +60,7 @@ export function EarningsBlock({
           <span className="pl">{periodLabel}</span>
           <Tip>{periodHint}</Tip>
         </div>
-        <PeriodFilter basePath={basePath} year={String(pYear)} quarter={pQ} years={[...years].sort((a, b) => b - a)} isDefault={isDefault} />
+        <PeriodFilter basePath={basePath} year={pYear === null ? "all" : String(pYear)} years={[...years].sort((a, b) => b - a)} />
       </div>
       <div className="earn-body">
         <div className="earn-bal">
