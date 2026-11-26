@@ -1,7 +1,9 @@
 # Sistema de Empresas Parceiras — Especificação técnica
 
-Versão 2.7 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
+Versão 2.8 · baseada no protótipo aprovado (canvas "Vay Agora — Expedições com parceiros") e no acordo
 "Vay Agência parceira — Regras de Negócio Padrões" (`public/docs/regras-de-negocio-padrao.pdf`).
+
+**Mudanças na 2.8:** home pública de divulgação em `/` (`src/app/(public)/HomeLanding.tsx`), para enviar aos prospects: sem formulário, só "Entrar". Sem sessão mostra a home; com sessão redireciona ao painel. Não indexada (`robots` noindex/nofollow + `public/robots.txt`), com prévia Open Graph (`opengraph-image`). O login tem "← Conhecer o programa".
 
 **Mudanças na 2.7:** o bloco "Ganhos" (Vay e parceiro) deixa de ter filtro por trimestre: só **"Todos os anos"** (padrão) ou um ano específico, pela data de fechamento do negócio no HubSpot.
 

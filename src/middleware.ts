@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/api/cron/", "/login", "/auth", "/esqueci-senha"];
+const PUBLIC_PATHS = ["/api/cron/", "/login", "/auth", "/esqueci-senha", "/robots.txt", "/opengraph-image"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -30,7 +30,8 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  if (!user && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
+  // "/" é a home pública de divulgação (com sessão, a própria página redireciona para o painel)
+  if (!user && path !== "/" && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
